@@ -358,6 +358,37 @@ checkpoints/projectors/siglip2-so400m/
     metadata.json
 ```
 
+### One GPU for training-free diagnostics, three GPUs for pilot training
+
+First confirm CUDA works:
+
+```bash
+python -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available()); print(torch.cuda.device_count())"
+```
+
+Run training-free diagnostics on GPU 0:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 bash scripts/run_all_no_train_analysis.sh \
+  data/manifests/hf_video_debug.jsonl \
+  outputs/no_train_diagnostics
+```
+
+In another terminal, run projector pilot training on GPUs 1, 2, and 3:
+
+```bash
+GPUS=1,2,3 \
+ENCODERS=clip-vit-l-14-336,siglip2-so400m,vjepa2-vith-256 \
+MAX_TOKENS=64 \
+MAX_LENGTH=1024 \
+GRAD_ACCUM=8 \
+make train-pilot
+```
+
+This pilot is for checking whether the controlled training path works and how
+different encoder families behave under the same frozen LLM and projector setup.
+It is not the final benchmark result, because the debug manifest is small.
+
 ## 7. Prepare benchmark manifests
 
 Evaluation expects the same JSONL schema. For multiple-choice benchmarks, use:

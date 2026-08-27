@@ -2,7 +2,7 @@ STORAGE_ROOT ?= /mnt/disks/data/vlm_encoder_benchmark
 HF_HOME ?= /mnt/disks/data/hf_cache
 export HF_HOME
 
-.PHONY: install storage data activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose perturb-mcq extract train eval
+.PHONY: install storage data activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose perturb-mcq train-pilot extract train eval
 
 install:
 	pip install -e .
@@ -67,6 +67,19 @@ perturb-mcq:
 	python scripts/aggregate_perturbation_mcq.py \
 		--root outputs/zeroshot_perturbation_mcq \
 		--out outputs/zeroshot_perturbation_mcq_table.csv
+
+train-pilot:
+	test -s data/manifests/hf_video_debug.jsonl || $(MAKE) hf-video-debug
+	test -s data/benchmarks/mcq_all.jsonl || python scripts/make_label_mcq_manifest.py \
+		--input data/manifests/hf_video_debug.jsonl \
+		--out data/benchmarks/mcq_all.jsonl \
+		--num-choices 3 \
+		--benchmark-name hf_video_label_mcq
+	bash scripts/run_parallel_pilot_train.sh \
+		data/benchmarks/mcq_all.jsonl \
+		features/pilot_train \
+		checkpoints/pilot_projectors \
+		runs/pilot_train
 
 train:
 	bash scripts/run_all_train.sh data/manifests/train_230k.jsonl features/train_230k checkpoints/projectors
