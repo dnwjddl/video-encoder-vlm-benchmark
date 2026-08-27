@@ -1,5 +1,9 @@
 # Storage layout
 
+Keep the git repository for code and documentation only. All generated files,
+downloaded assets, model caches, experiment outputs, checkpoints, and temporary
+run artifacts should live under `/mnt/disks`.
+
 Recommended server layout:
 
 ```text
@@ -23,7 +27,7 @@ Inside the git repository, run:
 
 ```bash
 bash scripts/setup_storage.sh /mnt/disks/data/vlm_encoder_benchmark
-source .env.storage
+source /mnt/disks/data/vlm_encoder_benchmark/env.storage
 ```
 
 This creates local symlinks:

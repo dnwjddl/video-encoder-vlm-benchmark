@@ -68,7 +68,7 @@ Put large files under `/mnt/disks/data`:
 
 ```bash
 bash scripts/setup_storage.sh /mnt/disks/data/vlm_encoder_benchmark
-source .env.storage
+source /mnt/disks/data/vlm_encoder_benchmark/env.storage
 ```
 
 This stores repo artifacts under:
