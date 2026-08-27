@@ -1,4 +1,4 @@
-.PHONY: install data extract train eval
+.PHONY: install data diagnose extract train eval
 
 install:
 	pip install -e .
@@ -14,6 +14,12 @@ data:
 
 extract:
 	bash scripts/run_all_extract.sh data/manifests/train_230k.jsonl features/train_230k
+
+diagnose:
+	bash scripts/run_all_no_train_analysis.sh data/manifests/train_debug.jsonl outputs/no_train_diagnostics
+	python scripts/aggregate_diagnostics.py \
+		--diagnostics-root outputs/no_train_diagnostics \
+		--out outputs/no_train_diagnostics_table.csv
 
 train:
 	bash scripts/run_all_train.sh data/manifests/train_230k.jsonl features/train_230k checkpoints/projectors

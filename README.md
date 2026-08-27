@@ -9,8 +9,9 @@ The main research question is:
 This repo intentionally separates three things:
 
 1. **Encoder feature extraction**
-2. **Projector-only training**
-3. **Benchmark evaluation**
+2. **No-training encoder diagnostics**
+3. **Projector-only training**
+4. **Benchmark evaluation**
 
 That separation keeps the comparison cleaner. The LLM, projector architecture, training data, prompts, and decoding/scoring code stay fixed; only the visual encoder changes.
 
@@ -91,7 +92,42 @@ python scripts/download_data.py \
 
 The unified schema is documented in [docs/MANIFEST_SCHEMA.md](docs/MANIFEST_SCHEMA.md).
 
-## 3. Extract features for each encoder
+## 3. Run no-training encoder diagnostics
+
+Before projector training, you can inspect whether an encoder is sensitive to temporal structure at all.
+
+Run one encoder:
+
+```bash
+python scripts/analyze_encoder_no_train.py \
+  --manifest data/manifests/train_debug.jsonl \
+  --encoder vjepa2-vith-256 \
+  --out-jsonl outputs/no_train_diagnostics/vjepa2-vith-256/per_example.jsonl \
+  --out-csv outputs/no_train_diagnostics/vjepa2-vith-256/summary.csv
+```
+
+Run all encoders and aggregate:
+
+```bash
+bash scripts/run_all_no_train_analysis.sh \
+  data/manifests/train_debug.jsonl \
+  outputs/no_train_diagnostics
+
+python scripts/aggregate_diagnostics.py \
+  --diagnostics-root outputs/no_train_diagnostics \
+  --out outputs/no_train_diagnostics_table.csv
+```
+
+The main metrics are:
+
+- `order_distance`: original vs reversed-frame representation distance
+- `shuffle_distance`: original vs shuffled-frame representation distance
+- `segment_diversity`: how differently segments from the same video are represented
+- `segment_temporal_margin`: whether far-apart segments are more different than neighboring segments
+
+For image encoders, `order_distance` should be near zero because frames are encoded independently and averaged. That is not a bug; it is exactly the limitation this diagnostic exposes. More details are in [docs/NO_TRAIN_DIAGNOSTICS.md](docs/NO_TRAIN_DIAGNOSTICS.md).
+
+## 4. Extract features for each encoder
 
 Run all encoders:
 
@@ -122,7 +158,7 @@ python scripts/extract_features.py \
   --skip-existing
 ```
 
-## 4. Train projector only
+## 5. Train projector only
 
 Default setup:
 
@@ -166,7 +202,7 @@ checkpoints/projectors/siglip2-so400m/
     metadata.json
 ```
 
-## 5. Prepare benchmark manifests
+## 6. Prepare benchmark manifests
 
 Evaluation expects the same JSONL schema. For multiple-choice benchmarks, use:
 
@@ -186,7 +222,7 @@ Evaluation expects the same JSONL schema. For multiple-choice benchmarks, use:
 
 Keep benchmark data separate from training data. If your training mix includes source datasets such as NExT-QA, ActivityNet-QA, or PerceptionTest, remove the overlapping split before evaluation.
 
-## 6. Extract benchmark features
+## 7. Extract benchmark features
 
 Use the same encoder names, but a benchmark manifest:
 
@@ -196,7 +232,7 @@ bash scripts/run_all_extract.sh \
   features/benchmarks
 ```
 
-## 7. Evaluate and aggregate
+## 8. Evaluate and aggregate
 
 ```bash
 bash scripts/run_all_eval.sh \
@@ -243,6 +279,17 @@ python scripts/extract_features.py \
 ```
 
 Then remove `--allow-missing-media` once your video paths are correct. It is better to catch path problems early than to discover them three hours into a run. Tiny tragedy, preventable.
+
+Run the no-training diagnostic before full projector training:
+
+```bash
+python scripts/analyze_encoder_no_train.py \
+  --manifest data/manifests/train_debug.jsonl \
+  --encoder clip-vit-l-14-336 \
+  --out-jsonl outputs/no_train_diagnostics/clip-vit-l-14-336/per_example.jsonl \
+  --out-csv outputs/no_train_diagnostics/clip-vit-l-14-336/summary.csv \
+  --limit 20
+```
 
 ## Interpreting results
 
