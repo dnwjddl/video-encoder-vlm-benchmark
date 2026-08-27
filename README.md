@@ -92,6 +92,27 @@ python scripts/download_data.py \
 
 The unified schema is documented in [docs/MANIFEST_SCHEMA.md](docs/MANIFEST_SCHEMA.md).
 
+### If you need actual MP4 files for no-training diagnostics
+
+The instruction datasets above often provide annotations and relative video ids, not the raw MP4 files. If your manifest paths look like `/data/videos/...` but `os.path.exists(...)` returns `False`, use a small directly downloadable video subset first.
+
+```bash
+HF_HOME=/data/hf_cache python scripts/download_activitynet_subset.py \
+  --video-dir /data/videos/activitynet \
+  --out data/manifests/activitynet_debug.jsonl \
+  --max-samples 100 \
+  --max-duration 180 \
+  --skip-existing
+```
+
+Check that the files exist:
+
+```bash
+python -c 'import json,os; rows=[json.loads(l) for _,l in zip(range(5),open("data/manifests/activitynet_debug.jsonl"))]; [print(r["media_path"], os.path.exists(r["media_path"])) for r in rows]'
+```
+
+This manifest is enough for no-training encoder diagnostics because those metrics only need real videos, not QA labels.
+
 ## 3. Run no-training encoder diagnostics
 
 Before projector training, you can inspect whether an encoder is sensitive to temporal structure at all.
@@ -100,7 +121,7 @@ Run one encoder:
 
 ```bash
 python scripts/analyze_encoder_no_train.py \
-  --manifest data/manifests/train_debug.jsonl \
+  --manifest data/manifests/activitynet_debug.jsonl \
   --encoder vjepa2-vith-256 \
   --out-jsonl outputs/no_train_diagnostics/vjepa2-vith-256/per_example.jsonl \
   --out-csv outputs/no_train_diagnostics/vjepa2-vith-256/summary.csv
@@ -110,7 +131,7 @@ Run all encoders and aggregate:
 
 ```bash
 bash scripts/run_all_no_train_analysis.sh \
-  data/manifests/train_debug.jsonl \
+  data/manifests/activitynet_debug.jsonl \
   outputs/no_train_diagnostics
 
 python scripts/aggregate_diagnostics.py \

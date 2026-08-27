@@ -12,6 +12,14 @@ data:
 		--qa-count 100000 \
 		--mcq-count 30000
 
+activitynet-debug:
+	python scripts/download_activitynet_subset.py \
+		--video-dir /data/videos/activitynet \
+		--out data/manifests/activitynet_debug.jsonl \
+		--max-samples 100 \
+		--max-duration 180 \
+		--skip-existing
+
 extract:
 	bash scripts/run_all_extract.sh data/manifests/train_230k.jsonl features/train_230k
 
