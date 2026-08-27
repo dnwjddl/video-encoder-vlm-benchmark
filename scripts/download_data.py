@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Iterable
 
 from datasets import load_dataset
@@ -11,9 +12,35 @@ from tqdm import tqdm
 
 from vlmevalbench.data import sample_records, stable_id, write_jsonl
 
+@dataclass(frozen=True)
+class HFDatasetSpec:
+    dataset_id: str
+    split: str
+    source: str
+    config: str | None = None
+
+
+LLAVA_VIDEO_CONFIGS = [
+    "0_30_s_academic_v0_1",
+    "0_30_s_youtube_v0_1",
+    "30_60_s_academic_v0_1",
+    "30_60_s_youtube_v0_1",
+    "1_2_m_academic_v0_1",
+    "1_2_m_youtube_v0_1",
+    "2_3_m_academic_v0_1",
+    "2_3_m_youtube_v0_1",
+]
+
+
 DEFAULT_HF_DATASETS = {
-    "videoinstruct100k": ("MBZUAI/VideoInstruct-100K", "train"),
-    "llava-video-178k": ("lmms-lab/LLaVA-Video-178K", "train"),
+    "videoinstruct100k": [
+        HFDatasetSpec("MBZUAI/VideoInstruct-100K", "train", "videoinstruct100k")
+    ],
+    "llava-video-178k": [
+        HFDatasetSpec("lmms-lab/LLaVA-Video-178K", split, f"llava-video-178k_{config}", config)
+        for config in LLAVA_VIDEO_CONFIGS
+        for split in ("caption", "open_ended", "multi_choice")
+    ],
 }
 
 
@@ -33,6 +60,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--local-json", nargs="*", default=[], help="Optional local JSON/JSONL annotation files.")
     parser.add_argument("--video-root", default="", help="Root directory containing downloaded videos.")
+    parser.add_argument(
+        "--video-extension",
+        default=".mp4",
+        help="Append this extension when a media id/path has no suffix. Use '' to disable.",
+    )
     parser.add_argument("--caption-count", type=int, default=100_000)
     parser.add_argument("--qa-count", type=int, default=100_000)
     parser.add_argument("--mcq-count", type=int, default=30_000)
@@ -42,7 +74,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--exclude-source-keywords",
         nargs="*",
-        default=["nextqa", "perceptiontest", "activitynetqa"],
+        default=["nextqa", "perceptiontest", "activitynet", "activitynetqa"],
         help="Drop records whose source/id/path contains these keywords to reduce eval leakage.",
     )
     return parser.parse_args()
@@ -95,7 +127,7 @@ def extract_conversation(row: dict[str, Any]) -> tuple[str | None, str | None]:
     return question, answer
 
 
-def normalize_media_path(raw: Any, video_root: str) -> str:
+def normalize_media_path(raw: Any, video_root: str, video_extension: str) -> str:
     if raw is None:
         return ""
     if isinstance(raw, dict):
@@ -104,16 +136,23 @@ def normalize_media_path(raw: Any, video_root: str) -> str:
     if raw_text.startswith("http://") or raw_text.startswith("https://"):
         return raw_text
     path = Path(raw_text)
+    if not path.suffix and video_extension:
+        path = path.with_suffix(video_extension)
     if path.is_absolute() or not video_root:
         return str(path)
     return str(Path(video_root) / path)
 
 
-def normalize_row(row: dict[str, Any], source: str, video_root: str) -> dict[str, Any] | None:
+def normalize_row(
+    row: dict[str, Any],
+    source: str,
+    video_root: str,
+    video_extension: str,
+) -> dict[str, Any] | None:
     question, answer = extract_conversation(row)
-    question = question or pick(row, ["question", "query", "prompt", "instruction"])
-    answer = answer or pick(row, ["answer", "response", "output", "caption", "text"])
-    caption = pick(row, ["caption", "dense_caption", "description"])
+    question = question or pick(row, ["question", "query", "prompt", "instruction", "q"])
+    answer = answer or pick(row, ["answer", "response", "output", "caption", "text", "a"])
+    caption = pick(row, ["caption", "dense_caption", "description", "cap"])
     choices = pick(row, ["choices", "options", "candidates"])
 
     if isinstance(choices, str):
@@ -130,12 +169,25 @@ def normalize_row(row: dict[str, Any], source: str, video_root: str) -> dict[str
     if answer is None:
         return None
 
-    media_raw = pick(row, ["video", "video_path", "video_name", "video_id", "image", "image_path"])
-    media_path = normalize_media_path(media_raw, video_root)
+    media_raw = pick(
+        row,
+        [
+            "video",
+            "video_path",
+            "video_name",
+            "video_id",
+            "videoid",
+            "image",
+            "image_path",
+        ],
+    )
+    media_path = normalize_media_path(media_raw, video_root, video_extension)
     media_type = "image" if pick(row, ["image", "image_path"]) is not None else "video"
 
     task = "mcq" if choices else ("caption" if str(question).lower().startswith("describe") else "qa")
-    raw_id = pick(row, ["id", "uid", "qid", "question_id", "video_id"]) or stable_id(source, str(question), str(answer))
+    raw_id = pick(row, ["id", "uid", "qid", "question_id", "video_id", "videoid"]) or stable_id(
+        source, str(question), str(answer)
+    )
     record_id = f"{source}_{raw_id}"
 
     normalized = {
@@ -157,21 +209,40 @@ def should_exclude(record: dict[str, Any], keywords: list[str]) -> bool:
     return any(keyword.lower() in text for keyword in keywords)
 
 
-def load_hf_records(alias_or_id: str, streaming: bool, max_rows: int | None) -> list[dict[str, Any]]:
+def expand_hf_specs(alias_or_id: str) -> list[HFDatasetSpec]:
     if alias_or_id in DEFAULT_HF_DATASETS:
-        dataset_id, split = DEFAULT_HF_DATASETS[alias_or_id]
-        source = alias_or_id
-    else:
-        if ":" in alias_or_id:
-            dataset_id, split = alias_or_id.split(":", 1)
-        else:
-            dataset_id, split = alias_or_id, "train"
-        source = dataset_id.split("/")[-1].lower()
+        return DEFAULT_HF_DATASETS[alias_or_id]
 
-    ds = load_dataset(dataset_id, split=split, streaming=streaming)
+    # Explicit form:
+    #   owner/name
+    #   owner/name:split
+    #   owner/name:config:split
+    parts = alias_or_id.split(":")
+    dataset_id = parts[0]
+    if len(parts) == 1:
+        config = None
+        split = "train"
+    elif len(parts) == 2:
+        config = None
+        split = parts[1]
+    elif len(parts) == 3:
+        config = parts[1]
+        split = parts[2]
+    else:
+        raise ValueError(f"Invalid HF dataset spec: {alias_or_id}")
+    source = dataset_id.split("/")[-1].lower() if config is None else f"{dataset_id.split('/')[-1].lower()}_{config}"
+    return [HFDatasetSpec(dataset_id, split, source, config)]
+
+
+def load_hf_records(spec: HFDatasetSpec, streaming: bool, max_rows: int | None) -> list[dict[str, Any]]:
+    if spec.config:
+        ds = load_dataset(spec.dataset_id, spec.config, split=spec.split, streaming=streaming)
+    else:
+        ds = load_dataset(spec.dataset_id, split=spec.split, streaming=streaming)
     rows = []
-    for idx, row in enumerate(tqdm(ds, desc=f"load:{source}")):
-        rows.append(dict(row) | {"_source_alias": source})
+    desc = f"load:{spec.source}:{spec.split}"
+    for idx, row in enumerate(tqdm(ds, desc=desc)):
+        rows.append(dict(row) | {"_source_alias": spec.source, "_split": spec.split})
         if max_rows is not None and idx + 1 >= max_rows:
             break
     return rows
@@ -182,22 +253,23 @@ def main() -> None:
     normalized: list[dict[str, Any]] = []
 
     for item in args.include:
-        try:
-            rows = load_hf_records(item, args.streaming, args.max_rows_per_dataset)
-        except Exception as exc:
-            print(f"Warning: failed to load HF dataset '{item}': {exc}")
-            continue
-        for row in rows:
-            source = row.pop("_source_alias")
-            record = normalize_row(row, source, args.video_root)
-            if record and not should_exclude(record, args.exclude_source_keywords):
-                normalized.append(record)
+        for spec in expand_hf_specs(item):
+            try:
+                rows = load_hf_records(spec, args.streaming, args.max_rows_per_dataset)
+            except Exception as exc:
+                print(f"Warning: failed to load HF dataset '{spec}': {exc}")
+                continue
+            for row in rows:
+                source = row.pop("_source_alias")
+                record = normalize_row(row, source, args.video_root, args.video_extension)
+                if record and not should_exclude(record, args.exclude_source_keywords):
+                    normalized.append(record)
 
     for local_path in args.local_json:
         path = Path(local_path)
         source = path.stem.lower()
         for row in tqdm(iter_local_records(path), desc=f"load:{source}"):
-            record = normalize_row(row, source, args.video_root)
+            record = normalize_row(row, source, args.video_root, args.video_extension)
             if record and not should_exclude(record, args.exclude_source_keywords):
                 normalized.append(record)
 
