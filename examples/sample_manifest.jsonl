@@ -1,0 +1,2 @@
+{"id":"demo_0001","source":"demo","task":"caption","media_type":"video","media_path":"examples/demo.mp4","question":"Describe the video.","answer":"A person performs an action in the video.","choices":null}
+{"id":"demo_0002","source":"demo","task":"mcq","media_type":"video","media_path":"examples/demo.mp4","question":"What happens first?","answer":"A","choices":["A person enters the scene.","A person leaves the scene.","The camera turns off.","Nothing moves."]}
