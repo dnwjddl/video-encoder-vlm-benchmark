@@ -126,24 +126,26 @@ The unified schema is documented in [docs/MANIFEST_SCHEMA.md](docs/MANIFEST_SCHE
 The instruction datasets above often provide annotations and relative video ids, not the raw MP4 files. If your manifest paths look like `/data/videos/...` but `os.path.exists(...)` returns `False`, use a small directly downloadable video subset first.
 
 ```bash
-HF_HOME=/mnt/disks/data/hf_cache python scripts/download_activitynet_subset.py \
-  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/activitynet \
-  --out data/manifests/activitynet_debug.jsonl \
+HF_HOME=/mnt/disks/data/hf_cache python scripts/download_hf_video_dataset.py \
+  --dataset-id VLM2Vec/Kinetics-700 \
+  --split test \
+  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/kinetics700_1k \
+  --out data/manifests/kinetics700_1k.jsonl \
   --max-samples 1000 \
-  --max-duration 180 \
-  --sleep-between-downloads 1 \
-  --skip-existing
+  --validate
 ```
 
-If YouTube/Google returns HTTP 429, stop and resume later with the same command. The downloader writes partial manifests as it goes, so successful downloads are kept.
+This downloads actual MP4 files from the dataset repo, not YouTube pages.
 
 Check that the files exist:
 
 ```bash
-python -c 'import json,os; rows=[json.loads(l) for _,l in zip(range(5),open("data/manifests/activitynet_debug.jsonl"))]; [print(r["media_path"], os.path.exists(r["media_path"])) for r in rows]'
+python -c 'import json,os; rows=[json.loads(l) for _,l in zip(range(5),open("data/manifests/kinetics700_1k.jsonl"))]; [print(r["media_path"], os.path.exists(r["media_path"])) for r in rows]'
 ```
 
 This manifest is enough for no-training encoder diagnostics because those metrics only need real videos, not QA labels.
+
+ActivityNet can still be useful later, but its public URLs are YouTube-based and often trigger HTTP 429. If a run prints many `moov atom not found` errors, those files are not valid videos and should not be used for analysis.
 
 If some MP4s are corrupt because a download was interrupted or rate-limited, create a clean manifest:
 
@@ -155,19 +157,33 @@ python scripts/filter_valid_media.py \
 
 Then use `activitynet_1k.valid.jsonl` for diagnostics and MCQ manifest generation.
 
-For a more serious no-training representation analysis, use 1K-5K videos:
+If you still want to try the ActivityNet helper, use:
 
 ```bash
 HF_HOME=/mnt/disks/data/hf_cache python scripts/download_activitynet_subset.py \
-  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/activitynet_5k \
-  --out data/manifests/activitynet_5k.jsonl \
-  --max-samples 5000 \
+  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/activitynet_1k \
+  --out data/manifests/activitynet_1k.jsonl \
+  --max-samples 1000 \
   --max-duration 180 \
   --sleep-between-downloads 1 \
   --skip-existing
 ```
 
-That is still not a reasoning benchmark, but it is much better for stable representation statistics.
+If YouTube/Google returns HTTP 429, stop and resume later with the same command. The downloader writes partial manifests as it goes, so successful downloads are kept.
+
+For a more serious no-training representation analysis, use at least 1K valid videos and add more real-video manifests later. Do not scale a broken YouTube scrape just to increase the count.
+
+```bash
+HF_HOME=/mnt/disks/data/hf_cache python scripts/download_hf_video_dataset.py \
+  --dataset-id VLM2Vec/Kinetics-700 \
+  --split test \
+  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/kinetics700_1k \
+  --out data/manifests/kinetics700_1k.jsonl \
+  --max-samples 1000 \
+  --validate
+```
+
+That is still not a reasoning benchmark, but it is much better for stable representation statistics than a broken or rate-limited YouTube scrape.
 
 ## 3. Run no-training encoder diagnostics
 
@@ -177,7 +193,7 @@ Run one encoder:
 
 ```bash
 python scripts/analyze_encoder_no_train.py \
-  --manifest data/manifests/activitynet_debug.jsonl \
+  --manifest data/manifests/kinetics700_1k.jsonl \
   --encoder vjepa2-vith-256 \
   --out-jsonl outputs/no_train_diagnostics/vjepa2-vith-256/per_example.jsonl \
   --out-csv outputs/no_train_diagnostics/vjepa2-vith-256/summary.csv
@@ -187,7 +203,7 @@ Run all encoders and aggregate:
 
 ```bash
 bash scripts/run_all_no_train_analysis.sh \
-  data/manifests/activitynet_debug.jsonl \
+  data/manifests/kinetics700_1k.jsonl \
   outputs/no_train_diagnostics
 
 python scripts/aggregate_diagnostics.py \
@@ -215,13 +231,14 @@ For image encoders, `order_distance` should be near zero because frames are enco
 
 If you have a multiple-choice benchmark manifest with real videos, you can also compare original/reverse/shuffle correctness without projector training for text-aligned encoders.
 
-If `data/benchmarks/mcq_all.jsonl` does not exist yet, create a smoke-test MCQ file from the downloaded ActivityNet subset:
+If `data/benchmarks/mcq_all.jsonl` does not exist yet, create a smoke-test MCQ file from the downloaded Kinetics-700 subset:
 
 ```bash
 python scripts/make_label_mcq_manifest.py \
-  --input data/manifests/activitynet_1k.jsonl \
+  --input data/manifests/kinetics700_1k.jsonl \
   --out data/benchmarks/mcq_all.jsonl \
-  --num-choices 5
+  --num-choices 5 \
+  --benchmark-name kinetics700_label_mcq
 ```
 
 This generated file is useful for checking the perturbation pipeline and frozen label consistency. It is not a replacement for temporal reasoning benchmarks such as MVBench, TempCompass, TemporalBench, or VideoMME.
@@ -394,30 +411,25 @@ For a new server, do this first:
 ```bash
 make install
 
-python scripts/download_data.py \
-  --out data/manifests/train_debug.jsonl \
-  --streaming \
-  --max-rows-per-dataset 2000 \
-  --caption-count 1000 \
-  --qa-count 1000 \
-  --mcq-count 500 \
-  --video-root /mnt/disks/data/vlm_encoder_benchmark/videos
+make storage
 
-python scripts/extract_features.py \
-  --manifest data/manifests/train_debug.jsonl \
-  --encoder clip-vit-l-14-336 \
-  --out-dir features/debug/clip-vit-l-14-336 \
-  --allow-missing-media \
-  --limit 10
+make kinetics700-debug
+
+make diagnose
+
+make perturb-mcq
 ```
 
-Then remove `--allow-missing-media` once your video paths are correct. It is better to catch path problems early than to discover them three hours into a run. Tiny tragedy, preventable.
+This gives you:
+
+- `outputs/no_train_diagnostics_table.csv`: all-encoder representation diagnostics
+- `outputs/zeroshot_perturbation_mcq_table.csv`: original/reverse/shuffle MCQ counts for text-aligned encoders
 
 Run the no-training diagnostic before full projector training:
 
 ```bash
 python scripts/analyze_encoder_no_train.py \
-  --manifest data/manifests/train_debug.jsonl \
+  --manifest data/manifests/kinetics700_1k.jsonl \
   --encoder clip-vit-l-14-336 \
   --out-jsonl outputs/no_train_diagnostics/clip-vit-l-14-336/per_example.jsonl \
   --out-csv outputs/no_train_diagnostics/clip-vit-l-14-336/summary.csv \

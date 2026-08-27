@@ -2,7 +2,7 @@ STORAGE_ROOT ?= /mnt/disks/data/vlm_encoder_benchmark
 HF_HOME ?= /mnt/disks/data/hf_cache
 export HF_HOME
 
-.PHONY: install storage data activitynet-debug diagnose perturb-mcq extract train eval
+.PHONY: install storage data activitynet-debug kinetics700-debug diagnose perturb-mcq extract train eval
 
 install:
 	pip install -e .
@@ -28,20 +28,30 @@ activitynet-debug:
 		--max-duration 180 \
 		--skip-existing
 
+kinetics700-debug:
+	python scripts/download_hf_video_dataset.py \
+		--dataset-id VLM2Vec/Kinetics-700 \
+		--split test \
+		--video-dir $(STORAGE_ROOT)/videos/kinetics700_1k \
+		--out data/manifests/kinetics700_1k.jsonl \
+		--max-samples 1000 \
+		--validate
+
 extract:
 	bash scripts/run_all_extract.sh data/manifests/train_230k.jsonl features/train_230k
 
 diagnose:
-	bash scripts/run_all_no_train_analysis.sh data/manifests/train_debug.jsonl outputs/no_train_diagnostics
+	bash scripts/run_all_no_train_analysis.sh data/manifests/kinetics700_1k.jsonl outputs/no_train_diagnostics
 	python scripts/aggregate_diagnostics.py \
 		--diagnostics-root outputs/no_train_diagnostics \
 		--out outputs/no_train_diagnostics_table.csv
 
 perturb-mcq:
 	python scripts/make_label_mcq_manifest.py \
-		--input data/manifests/activitynet_debug.jsonl \
+		--input data/manifests/kinetics700_1k.jsonl \
 		--out data/benchmarks/mcq_all.jsonl \
-		--num-choices 5
+		--num-choices 5 \
+		--benchmark-name kinetics700_label_mcq
 	bash scripts/run_text_aligned_perturbation_mcq.sh data/benchmarks/mcq_all.jsonl outputs/zeroshot_perturbation_mcq
 	python scripts/aggregate_perturbation_mcq.py \
 		--root outputs/zeroshot_perturbation_mcq \

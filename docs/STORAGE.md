@@ -14,6 +14,7 @@ Recommended server layout:
       manifests/
       benchmarks/
     videos/
+      kinetics700_1k/
       activitynet/
       activitynet_1k/
       activitynet_5k/
@@ -46,19 +47,19 @@ The model cache uses:
 export HF_HOME=/mnt/disks/data/hf_cache
 ```
 
-Video downloads can be rate-limited by YouTube/Google. The ActivityNet helper writes partial manifests and can resume:
+For quick diagnostics, prefer direct HF-hosted MP4 files:
 
 ```bash
-HF_HOME=/mnt/disks/data/hf_cache python scripts/download_activitynet_subset.py \
-  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/activitynet_1k \
-  --out data/manifests/activitynet_1k.jsonl \
+HF_HOME=/mnt/disks/data/hf_cache python scripts/download_hf_video_dataset.py \
+  --dataset-id VLM2Vec/Kinetics-700 \
+  --split test \
+  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/kinetics700_1k \
+  --out data/manifests/kinetics700_1k.jsonl \
   --max-samples 1000 \
-  --max-duration 180 \
-  --sleep-between-downloads 1 \
-  --skip-existing
+  --validate
 ```
 
-If HTTP 429 appears, wait and rerun the same command. Existing MP4s and manifest rows are reused.
+Video downloads from YouTube/Google can be rate-limited. If an ActivityNet run prints many `moov atom not found` errors, the files are not valid MP4s and should not be used for analysis.
 
 If a later evaluation reports `moov atom not found` or `Cannot sample frames from an empty video`, filter unreadable files:
 

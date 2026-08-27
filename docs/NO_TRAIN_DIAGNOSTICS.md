@@ -85,7 +85,7 @@ These diagnostics run before projector training. They do not answer the final VQ
 
 ```bash
 python scripts/analyze_encoder_no_train.py \
-  --manifest data/manifests/activitynet_debug.jsonl \
+  --manifest data/manifests/kinetics700_1k.jsonl \
   --encoder vjepa2-vith-256 \
   --out-jsonl outputs/no_train_diagnostics/vjepa2-vith-256/per_example.jsonl \
   --out-csv outputs/no_train_diagnostics/vjepa2-vith-256/summary.csv
@@ -95,7 +95,7 @@ Run all configured encoders:
 
 ```bash
 bash scripts/run_all_no_train_analysis.sh \
-  data/manifests/activitynet_debug.jsonl \
+  data/manifests/kinetics700_1k.jsonl \
   outputs/no_train_diagnostics
 
 python scripts/aggregate_diagnostics.py \

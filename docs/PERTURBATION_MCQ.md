@@ -57,6 +57,16 @@ Those encoders do not have a native text option scoring space, so true MCQ corre
 
 ## Run
 
+Create a small generated MCQ manifest from a labeled video manifest:
+
+```bash
+python scripts/make_label_mcq_manifest.py \
+  --input data/manifests/kinetics700_1k.jsonl \
+  --out data/benchmarks/mcq_all.jsonl \
+  --num-choices 5 \
+  --benchmark-name kinetics700_label_mcq
+```
+
 ```bash
 HF_HOME=/mnt/disks/data/hf_cache python scripts/evaluate_zeroshot_perturbation_mcq.py \
   --manifest data/benchmarks/mcq_all.jsonl \
