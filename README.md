@@ -172,6 +172,17 @@ For image encoders, `order_distance` should be near zero because frames are enco
 
 If you have a multiple-choice benchmark manifest with real videos, you can also compare original/reverse/shuffle correctness without projector training for text-aligned encoders.
 
+If `data/benchmarks/mcq_all.jsonl` does not exist yet, create a smoke-test MCQ file from the downloaded ActivityNet subset:
+
+```bash
+python scripts/make_label_mcq_manifest.py \
+  --input data/manifests/activitynet_1k.jsonl \
+  --out data/benchmarks/mcq_all.jsonl \
+  --num-choices 5
+```
+
+This generated file is useful for checking the perturbation pipeline and frozen label consistency. It is not a replacement for temporal reasoning benchmarks such as MVBench, TempCompass, TemporalBench, or VideoMME.
+
 ```bash
 HF_HOME=/data/hf_cache python scripts/evaluate_zeroshot_perturbation_mcq.py \
   --manifest data/benchmarks/mcq_all.jsonl \

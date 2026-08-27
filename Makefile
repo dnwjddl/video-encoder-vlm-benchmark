@@ -30,6 +30,10 @@ diagnose:
 		--out outputs/no_train_diagnostics_table.csv
 
 perturb-mcq:
+	python scripts/make_label_mcq_manifest.py \
+		--input data/manifests/activitynet_debug.jsonl \
+		--out data/benchmarks/mcq_all.jsonl \
+		--num-choices 5
 	bash scripts/run_text_aligned_perturbation_mcq.sh data/benchmarks/mcq_all.jsonl outputs/zeroshot_perturbation_mcq
 	python scripts/aggregate_perturbation_mcq.py \
 		--root outputs/zeroshot_perturbation_mcq \
