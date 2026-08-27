@@ -42,6 +42,20 @@ The model cache uses:
 export HF_HOME=/mnt/disks/data/hf_cache
 ```
 
+Video downloads can be rate-limited by YouTube/Google. The ActivityNet helper writes partial manifests and can resume:
+
+```bash
+HF_HOME=/mnt/disks/data/hf_cache python scripts/download_activitynet_subset.py \
+  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/activitynet_1k \
+  --out data/manifests/activitynet_1k.jsonl \
+  --max-samples 1000 \
+  --max-duration 180 \
+  --sleep-between-downloads 1 \
+  --skip-existing
+```
+
+If HTTP 429 appears, wait and rerun the same command. Existing MP4s and manifest rows are reused.
+
 ## If you already created files elsewhere
 
 Current earlier commands may have created files in:

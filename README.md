@@ -131,8 +131,11 @@ HF_HOME=/mnt/disks/data/hf_cache python scripts/download_activitynet_subset.py \
   --out data/manifests/activitynet_debug.jsonl \
   --max-samples 1000 \
   --max-duration 180 \
+  --sleep-between-downloads 1 \
   --skip-existing
 ```
+
+If YouTube/Google returns HTTP 429, stop and resume later with the same command. The downloader writes partial manifests as it goes, so successful downloads are kept.
 
 Check that the files exist:
 
@@ -150,6 +153,7 @@ HF_HOME=/mnt/disks/data/hf_cache python scripts/download_activitynet_subset.py \
   --out data/manifests/activitynet_5k.jsonl \
   --max-samples 5000 \
   --max-duration 180 \
+  --sleep-between-downloads 1 \
   --skip-existing
 ```
 
