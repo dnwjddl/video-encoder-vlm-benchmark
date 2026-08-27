@@ -89,6 +89,18 @@ def _ensure_token_tensor(features: torch.Tensor) -> torch.Tensor:
     raise RuntimeError(f"Unexpected feature shape: {tuple(features.shape)}")
 
 
+def _call_vision_tower(model: torch.nn.Module, batch: dict[str, Any]) -> Any:
+    if hasattr(model, "vision_model"):
+        vision_model = getattr(model, "vision_model")
+        try:
+            return vision_model(**batch)
+        except TypeError:
+            if "pixel_values" in batch:
+                return vision_model(pixel_values=batch["pixel_values"])
+            raise
+    return model(**batch)
+
+
 class FrozenEncoder:
     def __init__(
         self,
@@ -147,7 +159,7 @@ class FrozenEncoder:
     def _encode_as_images(self, frames: list[Image.Image]) -> torch.Tensor:
         batch = self.processor(images=frames, return_tensors="pt")
         batch = _move_to_device(batch, self.device, self.dtype)
-        outputs = self.model(**batch)
+        outputs = _call_vision_tower(self.model, batch)
         tokens = _extract_tokens(outputs, self.cfg.feature_key)
         tokens = _ensure_token_tensor(tokens)
         if self.cfg.drop_cls and tokens.shape[1] > 1:
