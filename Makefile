@@ -1,4 +1,4 @@
-.PHONY: install data diagnose extract train eval
+.PHONY: install data activitynet-debug diagnose perturb-mcq extract train eval
 
 install:
 	pip install -e .
@@ -28,6 +28,12 @@ diagnose:
 	python scripts/aggregate_diagnostics.py \
 		--diagnostics-root outputs/no_train_diagnostics \
 		--out outputs/no_train_diagnostics_table.csv
+
+perturb-mcq:
+	bash scripts/run_text_aligned_perturbation_mcq.sh data/benchmarks/mcq_all.jsonl outputs/zeroshot_perturbation_mcq
+	python scripts/aggregate_perturbation_mcq.py \
+		--root outputs/zeroshot_perturbation_mcq \
+		--out outputs/zeroshot_perturbation_mcq_table.csv
 
 train:
 	bash scripts/run_all_train.sh data/manifests/train_230k.jsonl features/train_230k checkpoints/projectors

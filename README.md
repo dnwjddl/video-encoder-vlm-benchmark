@@ -168,7 +168,45 @@ The main metrics are:
 
 For image encoders, `order_distance` should be near zero because frames are encoded independently and averaged. That is not a bug; it is exactly the limitation this diagnostic exposes. More details are in [docs/NO_TRAIN_DIAGNOSTICS.md](docs/NO_TRAIN_DIAGNOSTICS.md).
 
-## 4. Extract features for each encoder
+## 4. Run no-training perturbation MCQ for text-aligned encoders
+
+If you have a multiple-choice benchmark manifest with real videos, you can also compare original/reverse/shuffle correctness without projector training for text-aligned encoders.
+
+```bash
+HF_HOME=/data/hf_cache python scripts/evaluate_zeroshot_perturbation_mcq.py \
+  --manifest data/benchmarks/mcq_all.jsonl \
+  --encoder siglip2-so400m \
+  --out-jsonl outputs/zeroshot_perturbation_mcq/siglip2-so400m/predictions.jsonl \
+  --out-csv outputs/zeroshot_perturbation_mcq/siglip2-so400m/summary.csv
+```
+
+Run the default text-aligned image encoders:
+
+```bash
+HF_HOME=/data/hf_cache bash scripts/run_text_aligned_perturbation_mcq.sh \
+  data/benchmarks/mcq_all.jsonl \
+  outputs/zeroshot_perturbation_mcq
+
+python scripts/aggregate_perturbation_mcq.py \
+  --root outputs/zeroshot_perturbation_mcq \
+  --out outputs/zeroshot_perturbation_mcq_table.csv
+```
+
+The key count is:
+
+```text
+temporal_sensitive_any = original correct and reverse/shuffle wrong
+```
+
+The robust count is:
+
+```text
+robust_correct_all = original, reverse, and shuffle all correct
+```
+
+More details are in [docs/PERTURBATION_MCQ.md](docs/PERTURBATION_MCQ.md).
+
+## 5. Extract features for each encoder
 
 Run all encoders:
 
@@ -199,7 +237,7 @@ python scripts/extract_features.py \
   --skip-existing
 ```
 
-## 5. Train projector only
+## 6. Train projector only
 
 Default setup:
 
@@ -243,7 +281,7 @@ checkpoints/projectors/siglip2-so400m/
     metadata.json
 ```
 
-## 6. Prepare benchmark manifests
+## 7. Prepare benchmark manifests
 
 Evaluation expects the same JSONL schema. For multiple-choice benchmarks, use:
 
@@ -263,7 +301,7 @@ Evaluation expects the same JSONL schema. For multiple-choice benchmarks, use:
 
 Keep benchmark data separate from training data. If your training mix includes source datasets such as NExT-QA, ActivityNet-QA, or PerceptionTest, remove the overlapping split before evaluation.
 
-## 7. Extract benchmark features
+## 8. Extract benchmark features
 
 Use the same encoder names, but a benchmark manifest:
 
@@ -273,7 +311,7 @@ bash scripts/run_all_extract.sh \
   features/benchmarks
 ```
 
-## 8. Evaluate and aggregate
+## 9. Evaluate and aggregate
 
 ```bash
 bash scripts/run_all_eval.sh \
