@@ -43,6 +43,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dtype", default="bf16", choices=["bf16", "fp16", "fp32"])
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--allow-missing-media", action="store_true")
+    parser.add_argument(
+        "--strict-media",
+        action="store_true",
+        help="Raise on unreadable/corrupt media instead of skipping it.",
+    )
     return parser.parse_args()
 
 
@@ -303,6 +308,7 @@ def main() -> None:
     pooled_vectors: list[torch.Tensor] = []
     labels: list[str | None] = []
     skipped = 0
+    skipped_bad_media = 0
 
     for record in tqdm(records, desc=f"diagnose:{args.encoder}"):
         media_path = record.get("media_path")
@@ -312,7 +318,17 @@ def main() -> None:
                 continue
             raise FileNotFoundError(f"Missing media for id={record.get('id')}: {media_path}")
 
-        frames = load_media_frames(media_path, record.get("media_type", "video"), cfg.num_frames)
+        try:
+            frames = load_media_frames(media_path, record.get("media_type", "video"), cfg.num_frames)
+        except Exception as exc:
+            if args.strict_media:
+                raise
+            skipped_bad_media += 1
+            print(
+                f"Warning: skipping unreadable media id={record.get('id')} "
+                f"path={media_path}: {type(exc).__name__}: {exc}"
+            )
+            continue
         reversed_frames = list(reversed(frames))
         shuffled_frames = list(frames)
         rng.shuffle(shuffled_frames)
@@ -377,6 +393,8 @@ def main() -> None:
     print(f"Wrote summary diagnostics to {args.out_csv}")
     if skipped:
         print(f"Skipped {skipped} rows with missing media.")
+    if skipped_bad_media:
+        print(f"Skipped {skipped_bad_media} rows with unreadable/corrupt media.")
 
 
 if __name__ == "__main__":

@@ -56,6 +56,14 @@ HF_HOME=/mnt/disks/data/hf_cache python scripts/download_activitynet_subset.py \
 
 If HTTP 429 appears, wait and rerun the same command. Existing MP4s and manifest rows are reused.
 
+If a later evaluation reports `moov atom not found` or `Cannot sample frames from an empty video`, filter unreadable files:
+
+```bash
+python scripts/filter_valid_media.py \
+  --input data/manifests/activitynet_1k.jsonl \
+  --out data/manifests/activitynet_1k.valid.jsonl
+```
+
 ## If you already created files elsewhere
 
 Current earlier commands may have created files in:

@@ -145,6 +145,16 @@ python -c 'import json,os; rows=[json.loads(l) for _,l in zip(range(5),open("dat
 
 This manifest is enough for no-training encoder diagnostics because those metrics only need real videos, not QA labels.
 
+If some MP4s are corrupt because a download was interrupted or rate-limited, create a clean manifest:
+
+```bash
+python scripts/filter_valid_media.py \
+  --input data/manifests/activitynet_1k.jsonl \
+  --out data/manifests/activitynet_1k.valid.jsonl
+```
+
+Then use `activitynet_1k.valid.jsonl` for diagnostics and MCQ manifest generation.
+
 For a more serious no-training representation analysis, use 1K-5K videos:
 
 ```bash

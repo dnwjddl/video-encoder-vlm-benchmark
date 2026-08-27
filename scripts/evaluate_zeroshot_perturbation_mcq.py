@@ -45,6 +45,11 @@ def parse_args() -> argparse.Namespace:
         help="Text template used to embed each option.",
     )
     parser.add_argument("--allow-missing-media", action="store_true")
+    parser.add_argument(
+        "--strict-media",
+        action="store_true",
+        help="Raise on unreadable/corrupt media instead of skipping it.",
+    )
     return parser.parse_args()
 
 
@@ -240,6 +245,7 @@ def main() -> None:
     rng = random.Random(args.seed)
     rows = []
     skipped = 0
+    skipped_bad_media = 0
 
     for record in tqdm(records, desc=f"zeroshot_perturb:{args.encoder}"):
         media_path = record.get("media_path")
@@ -251,7 +257,17 @@ def main() -> None:
 
         choices = [str(choice) for choice in record["choices"]]
         gold = normalize_choice_answer(record.get("answer"), choices)
-        frames = load_media_frames(media_path, record.get("media_type", "video"), cfg.num_frames)
+        try:
+            frames = load_media_frames(media_path, record.get("media_type", "video"), cfg.num_frames)
+        except Exception as exc:
+            if args.strict_media:
+                raise
+            skipped_bad_media += 1
+            print(
+                f"Warning: skipping unreadable media id={record.get('id')} "
+                f"path={media_path}: {type(exc).__name__}: {exc}"
+            )
+            continue
 
         preds = {}
         scores = {}
@@ -299,6 +315,8 @@ def main() -> None:
     print(f"Wrote perturbation summary to {args.out_csv}")
     if skipped:
         print(f"Skipped {skipped} rows with missing media.")
+    if skipped_bad_media:
+        print(f"Skipped {skipped_bad_media} rows with unreadable/corrupt media.")
 
 
 if __name__ == "__main__":
