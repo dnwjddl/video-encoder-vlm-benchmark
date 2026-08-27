@@ -6,6 +6,7 @@ import random
 import shutil
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import unquote
 
 from datasets import load_dataset
 from huggingface_hub import hf_hub_download
@@ -163,6 +164,48 @@ def copy_video_file(source: str | Path, out_path: Path) -> Path:
     return out_path
 
 
+def parse_hf_dataset_uri(uri: str) -> tuple[str, str | None, str] | None:
+    prefix = "hf://datasets/"
+    if not uri.startswith(prefix):
+        return None
+
+    rest = uri[len(prefix) :]
+    parts = rest.split("/", 2)
+    if len(parts) != 3:
+        raise ValueError(f"Unsupported Hugging Face dataset URI: {uri}")
+
+    namespace, repo_and_revision, filename = parts
+    revision = None
+    if "@" in repo_and_revision:
+        repo_name, revision = repo_and_revision.split("@", 1)
+    else:
+        repo_name = repo_and_revision
+    repo_id = f"{namespace}/{repo_name}"
+    return repo_id, revision, unquote(filename)
+
+
+def download_hf_dataset_uri(uri: str, local_dir: Path) -> Path:
+    parsed = parse_hf_dataset_uri(uri)
+    if parsed is None:
+        raise ValueError(f"Not a Hugging Face dataset URI: {uri}")
+    repo_id, revision, filename = parsed
+    downloaded = hf_hub_download(
+        repo_id=repo_id,
+        repo_type="dataset",
+        revision=revision,
+        filename=filename,
+        local_dir=local_dir,
+    )
+    return Path(downloaded)
+
+
+def materialize_path_value(source: str | Path, video_dir: Path, out_path: Path) -> Path:
+    source_text = str(source)
+    if parse_hf_dataset_uri(source_text) is not None:
+        return download_hf_dataset_uri(source_text, video_dir)
+    return copy_video_file(source, out_path)
+
+
 def materialize_video_column(row: dict[str, Any], args: argparse.Namespace, video_dir: Path, row_id: str) -> Path:
     value = row.get(args.video_column)
     if value is None:
@@ -175,12 +218,12 @@ def materialize_video_column(row: dict[str, Any], args: argparse.Namespace, vide
         if value.get("bytes") is not None:
             return write_video_bytes(value, out_path)
         if source_path:
-            return copy_video_file(source_path, out_path)
+            return materialize_path_value(source_path, video_dir, out_path)
         raise ValueError(f"Video column '{args.video_column}' has neither bytes nor path.")
 
     if isinstance(value, (str, Path)):
         suffix = suffix_from_path(value)
-        return copy_video_file(value, video_dir / f"{safe_id(row_id)}{suffix}")
+        return materialize_path_value(value, video_dir, video_dir / f"{safe_id(row_id)}{suffix}")
 
     raise TypeError(
         f"Unsupported video value type from column '{args.video_column}': {type(value).__name__}. "

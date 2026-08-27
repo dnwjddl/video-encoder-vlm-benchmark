@@ -32,6 +32,16 @@ bash scripts/setup_storage.sh /mnt/disks/data/vlm_encoder_benchmark
 source /mnt/disks/data/vlm_encoder_benchmark/env.storage
 ```
 
+If you replaced the repository folder by copying a freshly downloaded GitHub
+folder, make sure local artifact directories do not block symlink creation. For
+example, if `data` is a real directory instead of a symlink, rename it and rerun
+setup:
+
+```bash
+if [ -d data ] && [ ! -L data ]; then mv data "data.local.$(date +%Y%m%d_%H%M%S)"; fi
+bash scripts/setup_storage.sh /mnt/disks/data/vlm_encoder_benchmark
+```
+
 This creates local symlinks:
 
 ```text
