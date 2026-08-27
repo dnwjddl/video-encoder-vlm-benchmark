@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export HF_HOME="${HF_HOME:-/mnt/disks/data/hf_cache}"
+
 MANIFEST="${1:-data/manifests/train_debug.jsonl}"
 OUT_ROOT="${2:-outputs/no_train_diagnostics}"
 

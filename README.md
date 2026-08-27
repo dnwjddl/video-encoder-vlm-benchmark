@@ -62,6 +62,35 @@ If you use gated Hugging Face models or datasets:
 huggingface-cli login
 ```
 
+## Storage setup
+
+Put large files under `/mnt/disks/data`:
+
+```bash
+bash scripts/setup_storage.sh /mnt/disks/data/vlm_encoder_benchmark
+source .env.storage
+```
+
+This stores repo artifacts under:
+
+```text
+/mnt/disks/data/vlm_encoder_benchmark/
+  data/
+  videos/
+  features/
+  outputs/
+  checkpoints/
+  runs/
+```
+
+and Hugging Face models under:
+
+```text
+/mnt/disks/data/hf_cache
+```
+
+More details are in [docs/STORAGE.md](docs/STORAGE.md).
+
 ## 2. Prepare training manifest
 
 The script below creates a unified JSONL manifest from public annotation datasets.
@@ -73,7 +102,7 @@ python scripts/download_data.py \
   --caption-count 100000 \
   --qa-count 100000 \
   --mcq-count 30000 \
-  --video-root /data/videos
+  --video-root /mnt/disks/data/vlm_encoder_benchmark/videos
 ```
 
 Important: this downloads/streams **annotations**. Many video datasets do not redistribute all raw videos in one simple archive. Put videos on the server, then set `--video-root` so each row's `media_path` points to the correct local file.
@@ -84,7 +113,7 @@ If you already have local annotation JSON/JSONL files:
 python scripts/download_data.py \
   --out data/manifests/train_230k.jsonl \
   --local-json /path/to/local_annotations.jsonl \
-  --video-root /data/videos \
+  --video-root /mnt/disks/data/vlm_encoder_benchmark/videos \
   --caption-count 100000 \
   --qa-count 100000 \
   --mcq-count 30000
@@ -97,8 +126,8 @@ The unified schema is documented in [docs/MANIFEST_SCHEMA.md](docs/MANIFEST_SCHE
 The instruction datasets above often provide annotations and relative video ids, not the raw MP4 files. If your manifest paths look like `/data/videos/...` but `os.path.exists(...)` returns `False`, use a small directly downloadable video subset first.
 
 ```bash
-HF_HOME=/data/hf_cache python scripts/download_activitynet_subset.py \
-  --video-dir /data/videos/activitynet \
+HF_HOME=/mnt/disks/data/hf_cache python scripts/download_activitynet_subset.py \
+  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/activitynet \
   --out data/manifests/activitynet_debug.jsonl \
   --max-samples 1000 \
   --max-duration 180 \
@@ -116,8 +145,8 @@ This manifest is enough for no-training encoder diagnostics because those metric
 For a more serious no-training representation analysis, use 1K-5K videos:
 
 ```bash
-HF_HOME=/data/hf_cache python scripts/download_activitynet_subset.py \
-  --video-dir /data/videos/activitynet_5k \
+HF_HOME=/mnt/disks/data/hf_cache python scripts/download_activitynet_subset.py \
+  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/activitynet_5k \
   --out data/manifests/activitynet_5k.jsonl \
   --max-samples 5000 \
   --max-duration 180 \
@@ -184,7 +213,7 @@ python scripts/make_label_mcq_manifest.py \
 This generated file is useful for checking the perturbation pipeline and frozen label consistency. It is not a replacement for temporal reasoning benchmarks such as MVBench, TempCompass, TemporalBench, or VideoMME.
 
 ```bash
-HF_HOME=/data/hf_cache python scripts/evaluate_zeroshot_perturbation_mcq.py \
+HF_HOME=/mnt/disks/data/hf_cache python scripts/evaluate_zeroshot_perturbation_mcq.py \
   --manifest data/benchmarks/mcq_all.jsonl \
   --encoder siglip2-so400m \
   --out-jsonl outputs/zeroshot_perturbation_mcq/siglip2-so400m/predictions.jsonl \
@@ -194,7 +223,7 @@ HF_HOME=/data/hf_cache python scripts/evaluate_zeroshot_perturbation_mcq.py \
 Run the default text-aligned image encoders:
 
 ```bash
-HF_HOME=/data/hf_cache bash scripts/run_text_aligned_perturbation_mcq.sh \
+HF_HOME=/mnt/disks/data/hf_cache bash scripts/run_text_aligned_perturbation_mcq.sh \
   data/benchmarks/mcq_all.jsonl \
   outputs/zeroshot_perturbation_mcq
 
@@ -358,7 +387,7 @@ python scripts/download_data.py \
   --caption-count 1000 \
   --qa-count 1000 \
   --mcq-count 500 \
-  --video-root /data/videos
+  --video-root /mnt/disks/data/vlm_encoder_benchmark/videos
 
 python scripts/extract_features.py \
   --manifest data/manifests/train_debug.jsonl \

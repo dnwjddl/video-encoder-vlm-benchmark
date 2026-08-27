@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export HF_HOME="${HF_HOME:-/mnt/disks/data/hf_cache}"
+
 BENCH_MANIFEST="${1:-data/benchmarks/mcq_all.jsonl}"
 FEATURE_ROOT="${2:-features/benchmarks}"
 CKPT_ROOT="${3:-checkpoints/projectors}"

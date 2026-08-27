@@ -9,7 +9,7 @@ All scripts use JSONL files. Each line is one example.
   "benchmark": "mvbench",
   "task": "mcq",
   "media_type": "video",
-  "media_path": "/data/videos/example.mp4",
+  "media_path": "/mnt/disks/data/vlm_encoder_benchmark/videos/example.mp4",
   "question": "What happens first?",
   "answer": "A",
   "choices": [

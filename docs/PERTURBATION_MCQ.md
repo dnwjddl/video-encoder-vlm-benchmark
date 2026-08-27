@@ -58,7 +58,7 @@ Those encoders do not have a native text option scoring space, so true MCQ corre
 ## Run
 
 ```bash
-HF_HOME=/data/hf_cache python scripts/evaluate_zeroshot_perturbation_mcq.py \
+HF_HOME=/mnt/disks/data/hf_cache python scripts/evaluate_zeroshot_perturbation_mcq.py \
   --manifest data/benchmarks/mcq_all.jsonl \
   --encoder siglip2-so400m \
   --out-jsonl outputs/zeroshot_perturbation_mcq/siglip2-so400m/predictions.jsonl \
@@ -68,7 +68,7 @@ HF_HOME=/data/hf_cache python scripts/evaluate_zeroshot_perturbation_mcq.py \
 Run the default text-aligned image encoders:
 
 ```bash
-HF_HOME=/data/hf_cache bash scripts/run_text_aligned_perturbation_mcq.sh \
+HF_HOME=/mnt/disks/data/hf_cache bash scripts/run_text_aligned_perturbation_mcq.sh \
   data/benchmarks/mcq_all.jsonl \
   outputs/zeroshot_perturbation_mcq
 

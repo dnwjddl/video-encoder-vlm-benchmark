@@ -1,8 +1,15 @@
-.PHONY: install data activitynet-debug diagnose perturb-mcq extract train eval
+STORAGE_ROOT ?= /mnt/disks/data/vlm_encoder_benchmark
+HF_HOME ?= /mnt/disks/data/hf_cache
+export HF_HOME
+
+.PHONY: install storage data activitynet-debug diagnose perturb-mcq extract train eval
 
 install:
 	pip install -e .
 	pip install -r requirements.txt
+
+storage:
+	bash scripts/setup_storage.sh $(STORAGE_ROOT)
 
 data:
 	python scripts/download_data.py \
@@ -10,11 +17,12 @@ data:
 		--streaming \
 		--caption-count 100000 \
 		--qa-count 100000 \
-		--mcq-count 30000
+		--mcq-count 30000 \
+		--video-root $(STORAGE_ROOT)/videos
 
 activitynet-debug:
 	python scripts/download_activitynet_subset.py \
-		--video-dir /data/videos/activitynet \
+		--video-dir $(STORAGE_ROOT)/videos/activitynet \
 		--out data/manifests/activitynet_debug.jsonl \
 		--max-samples 1000 \
 		--max-duration 180 \

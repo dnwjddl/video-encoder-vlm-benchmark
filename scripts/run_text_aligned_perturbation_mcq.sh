@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export HF_HOME="${HF_HOME:-/mnt/disks/data/hf_cache}"
+
 MANIFEST="${1:-data/benchmarks/mcq_all.jsonl}"
 OUT_ROOT="${2:-outputs/zeroshot_perturbation_mcq}"
 
