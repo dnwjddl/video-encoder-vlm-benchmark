@@ -14,7 +14,8 @@ Recommended server layout:
       manifests/
       benchmarks/
     videos/
-      kinetics700_1k/
+      mvbench_funqa_debug/
+      nextqa_rawvideo_1k/
       activitynet/
       activitynet_1k/
       activitynet_5k/
@@ -47,17 +48,22 @@ The model cache uses:
 export HF_HOME=/mnt/disks/data/hf_cache
 ```
 
-For quick diagnostics, prefer direct HF-hosted MP4 files:
+For quick diagnostics, prefer Hugging Face datasets with a real `Video` column:
 
 ```bash
 HF_HOME=/mnt/disks/data/hf_cache python scripts/download_hf_video_dataset.py \
-  --dataset-id VLM2Vec/Kinetics-700 \
+  --dataset-id VLM2Vec/mvbench-FunQA_test \
   --split test \
-  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/kinetics700_1k \
-  --out data/manifests/kinetics700_1k.jsonl \
-  --max-samples 1000 \
+  --source-mode video-column \
+  --video-column video \
+  --label-column label \
+  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/mvbench_funqa_debug \
+  --out data/manifests/hf_video_debug.jsonl \
+  --max-samples 358 \
   --validate
 ```
+
+`VLM2Vec/Kinetics-700` is metadata-only here. Its `video_path` rows point to Kinetics files, but those MP4 files are not hosted in that dataset repo.
 
 Video downloads from YouTube/Google can be rate-limited. If an ActivityNet run prints many `moov atom not found` errors, the files are not valid MP4s and should not be used for analysis.
 

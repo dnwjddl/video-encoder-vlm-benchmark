@@ -121,26 +121,29 @@ python scripts/download_data.py \
 
 The unified schema is documented in [docs/MANIFEST_SCHEMA.md](docs/MANIFEST_SCHEMA.md).
 
-### If you need actual MP4 files for no-training diagnostics
+### If you need actual video files for no-training diagnostics
 
 The instruction datasets above often provide annotations and relative video ids, not the raw MP4 files. If your manifest paths look like `/data/videos/...` but `os.path.exists(...)` returns `False`, use a small directly downloadable video subset first.
 
 ```bash
 HF_HOME=/mnt/disks/data/hf_cache python scripts/download_hf_video_dataset.py \
-  --dataset-id VLM2Vec/Kinetics-700 \
+  --dataset-id VLM2Vec/mvbench-FunQA_test \
   --split test \
-  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/kinetics700_1k \
-  --out data/manifests/kinetics700_1k.jsonl \
-  --max-samples 1000 \
+  --source-mode video-column \
+  --video-column video \
+  --label-column label \
+  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/mvbench_funqa_debug \
+  --out data/manifests/hf_video_debug.jsonl \
+  --max-samples 358 \
   --validate
 ```
 
-This downloads actual MP4 files from the dataset repo, not YouTube pages.
+This exports actual videos from a Hugging Face `Video` column, not YouTube pages. `VLM2Vec/Kinetics-700` is metadata-only in this repo: its `video_path` rows point to Kinetics files, but those MP4 files are not hosted there.
 
 Check that the files exist:
 
 ```bash
-python -c 'import json,os; rows=[json.loads(l) for _,l in zip(range(5),open("data/manifests/kinetics700_1k.jsonl"))]; [print(r["media_path"], os.path.exists(r["media_path"])) for r in rows]'
+python -c 'import json,os; rows=[json.loads(l) for _,l in zip(range(5),open("data/manifests/hf_video_debug.jsonl"))]; [print(r["media_path"], os.path.exists(r["media_path"])) for r in rows]'
 ```
 
 This manifest is enough for no-training encoder diagnostics because those metrics only need real videos, not QA labels.
@@ -171,14 +174,17 @@ HF_HOME=/mnt/disks/data/hf_cache python scripts/download_activitynet_subset.py \
 
 If YouTube/Google returns HTTP 429, stop and resume later with the same command. The downloader writes partial manifests as it goes, so successful downloads are kept.
 
-For a more serious no-training representation analysis, use at least 1K valid videos and add more real-video manifests later. Do not scale a broken YouTube scrape just to increase the count.
+For a larger no-training representation analysis, use a larger HF rawvideo dataset such as `VLM2Vec/nextqa-rawvideo`. Do not scale a broken YouTube scrape just to increase the count.
 
 ```bash
 HF_HOME=/mnt/disks/data/hf_cache python scripts/download_hf_video_dataset.py \
-  --dataset-id VLM2Vec/Kinetics-700 \
-  --split test \
-  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/kinetics700_1k \
-  --out data/manifests/kinetics700_1k.jsonl \
+  --dataset-id VLM2Vec/nextqa-rawvideo \
+  --split train \
+  --source-mode video-column \
+  --video-column video \
+  --label-column "" \
+  --video-dir /mnt/disks/data/vlm_encoder_benchmark/videos/nextqa_rawvideo_1k \
+  --out data/manifests/nextqa_rawvideo_1k.jsonl \
   --max-samples 1000 \
   --validate
 ```
@@ -193,7 +199,7 @@ Run one encoder:
 
 ```bash
 python scripts/analyze_encoder_no_train.py \
-  --manifest data/manifests/kinetics700_1k.jsonl \
+  --manifest data/manifests/hf_video_debug.jsonl \
   --encoder vjepa2-vith-256 \
   --out-jsonl outputs/no_train_diagnostics/vjepa2-vith-256/per_example.jsonl \
   --out-csv outputs/no_train_diagnostics/vjepa2-vith-256/summary.csv
@@ -203,7 +209,7 @@ Run all encoders and aggregate:
 
 ```bash
 bash scripts/run_all_no_train_analysis.sh \
-  data/manifests/kinetics700_1k.jsonl \
+  data/manifests/hf_video_debug.jsonl \
   outputs/no_train_diagnostics
 
 python scripts/aggregate_diagnostics.py \
@@ -231,14 +237,14 @@ For image encoders, `order_distance` should be near zero because frames are enco
 
 If you have a multiple-choice benchmark manifest with real videos, you can also compare original/reverse/shuffle correctness without projector training for text-aligned encoders.
 
-If `data/benchmarks/mcq_all.jsonl` does not exist yet, create a smoke-test MCQ file from the downloaded Kinetics-700 subset:
+If `data/benchmarks/mcq_all.jsonl` does not exist yet, create a smoke-test MCQ file from the downloaded HF video subset:
 
 ```bash
 python scripts/make_label_mcq_manifest.py \
-  --input data/manifests/kinetics700_1k.jsonl \
+  --input data/manifests/hf_video_debug.jsonl \
   --out data/benchmarks/mcq_all.jsonl \
-  --num-choices 5 \
-  --benchmark-name kinetics700_label_mcq
+  --num-choices 3 \
+  --benchmark-name hf_video_label_mcq
 ```
 
 This generated file is useful for checking the perturbation pipeline and frozen label consistency. It is not a replacement for temporal reasoning benchmarks such as MVBench, TempCompass, TemporalBench, or VideoMME.
@@ -413,7 +419,7 @@ make install
 
 make storage
 
-make kinetics700-debug
+make video-debug
 
 make diagnose
 
@@ -429,7 +435,7 @@ Run the no-training diagnostic before full projector training:
 
 ```bash
 python scripts/analyze_encoder_no_train.py \
-  --manifest data/manifests/kinetics700_1k.jsonl \
+  --manifest data/manifests/hf_video_debug.jsonl \
   --encoder clip-vit-l-14-336 \
   --out-jsonl outputs/no_train_diagnostics/clip-vit-l-14-336/per_example.jsonl \
   --out-csv outputs/no_train_diagnostics/clip-vit-l-14-336/summary.csv \

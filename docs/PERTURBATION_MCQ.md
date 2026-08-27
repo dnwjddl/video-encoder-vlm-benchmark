@@ -61,10 +61,10 @@ Create a small generated MCQ manifest from a labeled video manifest:
 
 ```bash
 python scripts/make_label_mcq_manifest.py \
-  --input data/manifests/kinetics700_1k.jsonl \
+  --input data/manifests/hf_video_debug.jsonl \
   --out data/benchmarks/mcq_all.jsonl \
-  --num-choices 5 \
-  --benchmark-name kinetics700_label_mcq
+  --num-choices 3 \
+  --benchmark-name hf_video_label_mcq
 ```
 
 ```bash
