@@ -16,7 +16,7 @@ activitynet-debug:
 	python scripts/download_activitynet_subset.py \
 		--video-dir /data/videos/activitynet \
 		--out data/manifests/activitynet_debug.jsonl \
-		--max-samples 100 \
+		--max-samples 1000 \
 		--max-duration 180 \
 		--skip-existing
 

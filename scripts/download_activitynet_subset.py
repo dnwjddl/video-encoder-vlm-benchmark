@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", default="train")
     parser.add_argument("--video-dir", default="/data/videos/activitynet")
     parser.add_argument("--out", default="data/manifests/activitynet_debug.jsonl")
-    parser.add_argument("--max-samples", type=int, default=100)
+    parser.add_argument("--max-samples", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-duration", type=float, default=180.0)
     parser.add_argument("--timeout", type=int, default=120)

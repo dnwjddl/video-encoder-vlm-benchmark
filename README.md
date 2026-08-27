@@ -100,7 +100,7 @@ The instruction datasets above often provide annotations and relative video ids,
 HF_HOME=/data/hf_cache python scripts/download_activitynet_subset.py \
   --video-dir /data/videos/activitynet \
   --out data/manifests/activitynet_debug.jsonl \
-  --max-samples 100 \
+  --max-samples 1000 \
   --max-duration 180 \
   --skip-existing
 ```
@@ -112,6 +112,19 @@ python -c 'import json,os; rows=[json.loads(l) for _,l in zip(range(5),open("dat
 ```
 
 This manifest is enough for no-training encoder diagnostics because those metrics only need real videos, not QA labels.
+
+For a more serious no-training representation analysis, use 1K-5K videos:
+
+```bash
+HF_HOME=/data/hf_cache python scripts/download_activitynet_subset.py \
+  --video-dir /data/videos/activitynet_5k \
+  --out data/manifests/activitynet_5k.jsonl \
+  --max-samples 5000 \
+  --max-duration 180 \
+  --skip-existing
+```
+
+That is still not a reasoning benchmark, but it is much better for stable representation statistics.
 
 ## 3. Run no-training encoder diagnostics
 
@@ -143,8 +156,15 @@ The main metrics are:
 
 - `order_distance`: original vs reversed-frame representation distance
 - `shuffle_distance`: original vs shuffled-frame representation distance
+- `cycle_shift_distance`: original vs temporally shifted-frame representation distance
+- `half_swap_distance`: original vs swapped first/second half representation distance
+- `stride_distance`: original vs sparse temporal sampling representation distance
 - `segment_diversity`: how differently segments from the same video are represented
 - `segment_temporal_margin`: whether far-apart segments are more different than neighboring segments
+- `segment_distance_correlation`: whether representation distance grows with temporal gap
+- `token_effective_rank`: how many independent directions remain after token compression
+- `token_top1_energy_ratio`: whether one dominant direction collapses the representation
+- `knn_top1` / `knn_topK`: label consistency without training, when labels exist
 
 For image encoders, `order_distance` should be near zero because frames are encoded independently and averaged. That is not a bug; it is exactly the limitation this diagnostic exposes. More details are in [docs/NO_TRAIN_DIAGNOSTICS.md](docs/NO_TRAIN_DIAGNOSTICS.md).
 
