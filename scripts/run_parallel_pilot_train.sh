@@ -29,65 +29,64 @@ if [ ! -s "${MANIFEST}" ]; then
   exit 1
 fi
 
-if [ "${#ENCODERS[@]}" -gt "${#GPUS[@]}" ]; then
-  echo "Need at least as many GPUS as ENCODERS." >&2
-  echo "ENCODERS=${ENCODERS_CSV}" >&2
-  echo "GPUS=${GPUS_CSV}" >&2
-  exit 1
-fi
-
 mkdir -p "${FEATURE_ROOT}" "${OUT_ROOT}" "${RUN_ROOT}"
 
-run_one() {
-  local encoder="$1"
-  local gpu="$2"
-  local log_file="${RUN_ROOT}/${encoder}.gpu${gpu}.log"
+run_worker() {
+  local gpu_idx="$1"
+  local gpu="${GPUS[$gpu_idx]}"
+  local log_file="${RUN_ROOT}/worker_gpu${gpu}.log"
 
   (
     set -euo pipefail
     export CUDA_VISIBLE_DEVICES="${gpu}"
-    echo "encoder=${encoder}"
-    echo "gpu=${gpu}"
+    echo "worker_gpu=${gpu}"
     echo "manifest=${MANIFEST}"
     echo "llm_id=${LLM_ID}"
     echo "feature_root=${FEATURE_ROOT}"
     echo "out_root=${OUT_ROOT}"
     echo "HF_HOME=${HF_HOME}"
 
-    python scripts/extract_features.py \
-      --manifest "${MANIFEST}" \
-      --encoder "${encoder}" \
-      --out-dir "${FEATURE_ROOT}/${encoder}" \
-      --max-tokens "${MAX_TOKENS}" \
-      --dtype "${DTYPE}" \
-      --skip-existing
+    for idx in "${!ENCODERS[@]}"; do
+      if [ $((idx % ${#GPUS[@]})) -ne "${gpu_idx}" ]; then
+        continue
+      fi
 
-    python scripts/train_projector.py \
-      --manifest "${MANIFEST}" \
-      --feature-index "${FEATURE_ROOT}/${encoder}/index.jsonl" \
-      --out-dir "${OUT_ROOT}/${encoder}" \
-      --encoder-name "${encoder}" \
-      --llm-id "${LLM_ID}" \
-      --batch-size "${BATCH_SIZE}" \
-      --grad-accum "${GRAD_ACCUM}" \
-      --epochs "${EPOCHS}" \
-      --lr "${LR}" \
-      --dtype "${DTYPE}" \
-      --max-length "${MAX_LENGTH}" \
-      --num-workers "${NUM_WORKERS}" \
-      --save-every-steps "${SAVE_EVERY_STEPS}"
+      encoder="${ENCODERS[$idx]}"
+      echo "==> Extracting ${encoder} on GPU ${gpu}"
+      python scripts/extract_features.py \
+        --manifest "${MANIFEST}" \
+        --encoder "${encoder}" \
+        --out-dir "${FEATURE_ROOT}/${encoder}" \
+        --max-tokens "${MAX_TOKENS}" \
+        --dtype "${DTYPE}" \
+        --skip-existing
+
+      echo "==> Training projector for ${encoder} on GPU ${gpu}"
+      python scripts/train_projector.py \
+        --manifest "${MANIFEST}" \
+        --feature-index "${FEATURE_ROOT}/${encoder}/index.jsonl" \
+        --out-dir "${OUT_ROOT}/${encoder}" \
+        --encoder-name "${encoder}" \
+        --llm-id "${LLM_ID}" \
+        --batch-size "${BATCH_SIZE}" \
+        --grad-accum "${GRAD_ACCUM}" \
+        --epochs "${EPOCHS}" \
+        --lr "${LR}" \
+        --dtype "${DTYPE}" \
+        --max-length "${MAX_LENGTH}" \
+        --num-workers "${NUM_WORKERS}" \
+        --save-every-steps "${SAVE_EVERY_STEPS}"
+    done
   ) > "${log_file}" 2>&1 &
 
   echo "$!"
 }
 
 pids=()
-for idx in "${!ENCODERS[@]}"; do
-  encoder="${ENCODERS[$idx]}"
-  gpu="${GPUS[$idx]}"
-  pid="$(run_one "${encoder}" "${gpu}")"
+for gpu_idx in "${!GPUS[@]}"; do
+  pid="$(run_worker "${gpu_idx}")"
   pids+=("${pid}")
-  echo "Started ${encoder} on GPU ${gpu}; pid=${pid}; log=${RUN_ROOT}/${encoder}.gpu${gpu}.log"
+  echo "Started pilot training worker on GPU ${GPUS[$gpu_idx]}; pid=${pid}; log=${RUN_ROOT}/worker_gpu${GPUS[$gpu_idx]}.log"
 done
 
 failed=0

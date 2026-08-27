@@ -2,7 +2,7 @@ STORAGE_ROOT ?= /mnt/disks/data/vlm_encoder_benchmark
 HF_HOME ?= /mnt/disks/data/hf_cache
 export HF_HOME
 
-.PHONY: install storage data activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose perturb-mcq train-pilot extract train eval
+.PHONY: install storage data activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel perturb-mcq train-pilot extract train eval
 
 install:
 	pip install -e .
@@ -55,6 +55,13 @@ diagnose:
 	python scripts/aggregate_diagnostics.py \
 		--diagnostics-root outputs/no_train_diagnostics \
 		--out outputs/no_train_diagnostics_table.csv
+
+diagnose-parallel:
+	test -s data/manifests/hf_video_debug.jsonl || $(MAKE) hf-video-debug
+	bash scripts/run_parallel_no_train_analysis.sh \
+		data/manifests/hf_video_debug.jsonl \
+		outputs/no_train_diagnostics \
+		runs/no_train_diagnostics
 
 perturb-mcq:
 	test -s data/manifests/hf_video_debug.jsonl || $(MAKE) hf-video-debug

@@ -358,7 +358,7 @@ checkpoints/projectors/siglip2-so400m/
     metadata.json
 ```
 
-### One GPU for training-free diagnostics, three GPUs for pilot training
+### Multi-GPU training-free diagnostics and pilot training
 
 First confirm CUDA works:
 
@@ -366,19 +366,28 @@ First confirm CUDA works:
 python -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available()); print(torch.cuda.device_count())"
 ```
 
-Run training-free diagnostics on GPU 0:
+Run all training-free diagnostics across GPUs 0, 1, 2, and 3:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 bash scripts/run_all_no_train_analysis.sh \
-  data/manifests/hf_video_debug.jsonl \
-  outputs/no_train_diagnostics
+GPUS=0,1,2,3 make diagnose-parallel
 ```
 
-In another terminal, run projector pilot training on GPUs 1, 2, and 3:
+Run a small projector pilot on representative encoders:
 
 ```bash
 GPUS=1,2,3 \
 ENCODERS=clip-vit-l-14-336,siglip2-so400m,vjepa2-vith-256 \
+MAX_TOKENS=64 \
+MAX_LENGTH=1024 \
+GRAD_ACCUM=8 \
+make train-pilot
+```
+
+If each job fits in memory, run the pilot over all configured encoders:
+
+```bash
+GPUS=0,1,2,3 \
+ENCODERS=clip-vit-l-14-336,siglip-so400m,siglip2-so400m,internvit-300m,dinov2-vitl14,videomaev2-base,vjepa2-vith-256,internvideo2-clip-1b \
 MAX_TOKENS=64 \
 MAX_LENGTH=1024 \
 GRAD_ACCUM=8 \
