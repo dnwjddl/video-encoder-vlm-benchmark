@@ -36,6 +36,20 @@ def save_figure(fig: plt.Figure, out_prefix: Path) -> None:
     plt.close(fig)
 
 
+def percent_text(value: float, total: float) -> str:
+    if total <= 0:
+        return ""
+    return f"{value / total * 100:.1f}%"
+
+
+def percent_fontsize(percent: float) -> float:
+    if percent >= 10:
+        return 8.0
+    if percent >= 5:
+        return 7.0
+    return 6.0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Aggregate MVBench text-only and perturbation filters.")
     parser.add_argument("--manifest", default="data/benchmarks/mvbench_all.jsonl")
@@ -216,6 +230,23 @@ def plot_overview(summary_df: pd.DataFrame, out_prefix: Path) -> None:
     for col, label, color in stack_cols:
         values = pd.to_numeric(all_df[col], errors="coerce").fillna(0).to_numpy(dtype=float)
         ax.bar(x, values, bottom=bottoms, label=label, color=color, linewidth=0)
+        totals = pd.to_numeric(all_df["num_examples"], errors="coerce").fillna(0).to_numpy(dtype=float)
+        for x_pos, bottom, value, total in zip(x, bottoms, values, totals):
+            if value <= 0 or total <= 0:
+                continue
+            percent = value / total * 100
+            y_pos = bottom + value / 2
+            ax.text(
+                x_pos,
+                y_pos,
+                percent_text(value, total),
+                ha="center",
+                va="center",
+                fontsize=percent_fontsize(percent),
+                color="white" if percent >= 4 else "black",
+                rotation=90 if percent < 4 else 0,
+                clip_on=False,
+            )
         bottoms += values
     ax.set_title("MVBench Filter Distribution", loc="left", fontweight="bold")
     ax.set_ylabel("questions")
@@ -288,9 +319,26 @@ def plot_filter_distribution(all_df: pd.DataFrame, out_prefix: Path) -> None:
         ("reverse_or_shuffle_shortcut", "reverse/shuffle shortcut", PALETTE["reverse_shuffle"]),
         ("hard_after_filters", "hard after filters", PALETTE["hard"]),
     ]
+    totals = pd.to_numeric(all_df["num_examples"], errors="coerce").fillna(0).to_numpy(dtype=float)
     for col, label, color in stack_cols:
         values = pd.to_numeric(all_df[col], errors="coerce").fillna(0).to_numpy(dtype=float)
         ax.barh(y, values, left=left, label=label, color=color, linewidth=0)
+        for y_pos, start, value, total in zip(y, left, values, totals):
+            if value <= 0 or total <= 0:
+                continue
+            percent = value / total * 100
+            inside = percent >= 4
+            x_pos = start + value / 2 if inside else start + value + max(total * 0.006, 1.0)
+            ax.text(
+                x_pos,
+                y_pos,
+                percent_text(value, total),
+                va="center",
+                ha="center" if inside else "left",
+                fontsize=percent_fontsize(percent),
+                color="white" if inside else "black",
+                clip_on=False,
+            )
         left += values
     ax.set_title("MVBench Filter Distribution", loc="left", fontweight="bold")
     ax.set_xlabel("questions")
@@ -298,6 +346,9 @@ def plot_filter_distribution(all_df: pd.DataFrame, out_prefix: Path) -> None:
     ax.set_yticklabels(encoders)
     ax.invert_yaxis()
     ax.grid(axis="x", alpha=0.25)
+    max_total = float(np.nanmax(totals)) if len(totals) else 0.0
+    if max_total > 0:
+        ax.set_xlim(0, max_total * 1.08)
     ax.legend(frameon=False, fontsize=9, loc="lower center", bbox_to_anchor=(0.5, -0.2), ncol=2)
     save_figure(fig, out_prefix)
 
