@@ -29,6 +29,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-missing-media", action="store_true")
     parser.add_argument("--validate-media", action="store_true")
     parser.add_argument("--validate-frames", type=int, default=4)
+    parser.add_argument(
+        "--no-dedupe",
+        action="store_true",
+        help="Keep semantic duplicates. By default, repeated video/question/options/answer rows are removed.",
+    )
     parser.add_argument("--limit", type=int, default=None)
     return parser.parse_args()
 
@@ -158,6 +163,16 @@ def task_name_from_json(root: Path, json_path: Path) -> str:
     return "/".join((*rel.parent.parts, json_path.stem))
 
 
+def semantic_key(*, media_path: str | None, question: str, choices: list[str], answer: str, raw_video: Any) -> tuple[str, str, tuple[str, ...], str]:
+    media_key = str(Path(media_path).resolve()) if media_path else str(raw_video)
+    return (
+        media_key,
+        " ".join(question.split()).lower(),
+        tuple(" ".join(choice.split()).lower() for choice in choices),
+        str(answer).strip().upper(),
+    )
+
+
 def main() -> None:
     args = parse_args()
     root = Path(args.mvbench_root).expanduser().resolve()
@@ -169,6 +184,7 @@ def main() -> None:
     counters = Counter()
     task_counts = Counter()
     seen_ids: set[str] = set()
+    seen_semantic: set[tuple[str, str, tuple[str, ...], str]] = set()
 
     json_paths = [
         path
@@ -207,6 +223,12 @@ def main() -> None:
                     if args.skip_missing_media:
                         continue
                     print(f"Warning: bad media {media_path}: {type(exc).__name__}: {exc}")
+
+            key = semantic_key(media_path=media_path, question=question, choices=choices, answer=answer, raw_video=raw_video)
+            if not args.no_dedupe and key in seen_semantic:
+                counters["semantic_duplicates"] += 1
+                continue
+            seen_semantic.add(key)
 
             raw_id = first_value(item, ("id", "question_id", "qid", "uid"))
             base_row_id = (

@@ -30,6 +30,8 @@ if [ ! -s "${MANIFEST}" ]; then
   exit 1
 fi
 
+MANIFEST_ROWS="$(wc -l < "${MANIFEST}" | tr -d ' ')"
+
 mkdir -p "${FEATURE_ROOT}" "${OUT_ROOT}" "${RUN_ROOT}"
 
 TEXT_DIR="${OUT_ROOT}/text_only"
@@ -60,6 +62,16 @@ print_failure_logs() {
     echo "==> ${log_file}"
     tail -n "${LOG_TAIL_LINES}" "${log_file}" || true
   done
+}
+
+prediction_complete() {
+  local path="$1"
+  if [ ! -s "${path}" ]; then
+    return 1
+  fi
+  local rows
+  rows="$(wc -l < "${path}" | tr -d ' ')"
+  [ "${rows}" = "${MANIFEST_ROWS}" ]
 }
 
 next_encoder() {
@@ -94,7 +106,7 @@ latest_step_dir() {
 
 run_text_only() {
   mkdir -p "${TEXT_DIR}"
-  if [ "${FORCE}" != "1" ] && [ -s "${TEXT_DIR}/predictions.jsonl" ]; then
+  if [ "${FORCE}" != "1" ] && prediction_complete "${TEXT_DIR}/predictions.jsonl"; then
     echo "SKIP text-only; found ${TEXT_DIR}/predictions.jsonl"
     return
   fi
@@ -126,7 +138,7 @@ run_encoder_mode() {
   local pred_dir="${EVAL_ROOT}/${encoder}/${mode}"
   mkdir -p "${feature_dir}" "${pred_dir}"
 
-  if [ "${FORCE}" != "1" ] && [ -s "${pred_dir}/predictions.jsonl" ]; then
+  if [ "${FORCE}" != "1" ] && prediction_complete "${pred_dir}/predictions.jsonl"; then
     echo "SKIP ${encoder} ${mode}" >> "${status_file}"
     return 0
   fi
@@ -176,6 +188,7 @@ run_worker() {
     : > "${status_file}"
     echo "worker_gpu=${gpu}"
     echo "manifest=${MANIFEST}"
+    echo "manifest_rows=${MANIFEST_ROWS}"
     echo "feature_root=${FEATURE_ROOT}"
     echo "ckpt_root=${CKPT_ROOT}"
     echo "out_root=${OUT_ROOT}"
