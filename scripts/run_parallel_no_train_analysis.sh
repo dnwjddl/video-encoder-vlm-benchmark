@@ -2,6 +2,7 @@
 set -euo pipefail
 
 export HF_HOME="${HF_HOME:-/mnt/disks/data/hf_cache}"
+export VLMEB_LOCAL_FILES_ONLY="${VLMEB_LOCAL_FILES_ONLY:-0}"
 
 MANIFEST="${1:-data/manifests/hf_video_debug.jsonl}"
 OUT_ROOT="${2:-outputs/no_train_diagnostics}"
@@ -39,6 +40,7 @@ run_worker() {
     echo "manifest=${MANIFEST}"
     echo "out_root=${OUT_ROOT}"
     echo "HF_HOME=${HF_HOME}"
+    echo "VLMEB_LOCAL_FILES_ONLY=${VLMEB_LOCAL_FILES_ONLY}"
     worker_failed=0
 
     for idx in "${!ENCODERS[@]}"; do

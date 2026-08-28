@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import random
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,13 @@ from vlmevalbench.video_io import load_media_frames
 
 
 PERTURBATIONS = ("original", "reverse", "shuffle")
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -85,12 +93,18 @@ class TextAlignedEncoder:
     def __init__(self, model_id: str, trust_remote_code: bool, device: str, dtype: torch.dtype) -> None:
         self.device = torch.device(device if torch.cuda.is_available() or device == "cpu" else "cpu")
         self.dtype = dtype
-        self.processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=trust_remote_code)
+        local_files_only = env_flag("VLMEB_LOCAL_FILES_ONLY")
+        self.processor = AutoProcessor.from_pretrained(
+            model_id,
+            trust_remote_code=trust_remote_code,
+            local_files_only=local_files_only,
+        )
         self.model = AutoModel.from_pretrained(
             model_id,
             trust_remote_code=trust_remote_code,
             torch_dtype=dtype,
             low_cpu_mem_usage=True,
+            local_files_only=local_files_only,
         ).to(self.device)
         self.model.eval()
         self.model.requires_grad_(False)

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 export HF_HOME="${HF_HOME:-/mnt/disks/data/hf_cache}"
+export VLMEB_LOCAL_FILES_ONLY="${VLMEB_LOCAL_FILES_ONLY:-0}"
 
 MANIFEST="${1:-data/manifests/train_230k.jsonl}"
 OUT_ROOT="${2:-features/train_230k}"
@@ -19,6 +20,8 @@ ENCODERS=(
 
 for ENCODER in "${ENCODERS[@]}"; do
   echo "==> Extracting ${ENCODER}"
+  echo "HF_HOME=${HF_HOME}"
+  echo "VLMEB_LOCAL_FILES_ONLY=${VLMEB_LOCAL_FILES_ONLY}"
   python scripts/extract_features.py \
     --manifest "${MANIFEST}" \
     --encoder "${ENCODER}" \

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 export HF_HOME="${HF_HOME:-/mnt/disks/data/hf_cache}"
+export VLMEB_LOCAL_FILES_ONLY="${VLMEB_LOCAL_FILES_ONLY:-0}"
 
 MANIFEST="${1:-data/manifests/train_230k.jsonl}"
 FEATURE_ROOT="${2:-features/train_230k}"
@@ -21,6 +22,8 @@ ENCODERS=(
 
 for ENCODER in "${ENCODERS[@]}"; do
   echo "==> Training projector for ${ENCODER}"
+  echo "HF_HOME=${HF_HOME}"
+  echo "VLMEB_LOCAL_FILES_ONLY=${VLMEB_LOCAL_FILES_ONLY}"
   accelerate launch scripts/train_projector.py \
     --manifest "${MANIFEST}" \
     --feature-index "${FEATURE_ROOT}/${ENCODER}/index.jsonl" \

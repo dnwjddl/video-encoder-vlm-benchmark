@@ -2,6 +2,7 @@
 set -euo pipefail
 
 export HF_HOME="${HF_HOME:-/mnt/disks/data/hf_cache}"
+export VLMEB_LOCAL_FILES_ONLY="${VLMEB_LOCAL_FILES_ONLY:-0}"
 
 BENCH_MANIFEST="${1:-data/benchmarks/mcq_all.jsonl}"
 FEATURE_ROOT="${2:-features/benchmarks}"
@@ -22,6 +23,8 @@ ENCODERS=(
 for ENCODER in "${ENCODERS[@]}"; do
   STEP_DIR="$(find "${CKPT_ROOT}/${ENCODER}" -maxdepth 1 -type d -name 'step_*' | sort | tail -n 1)"
   echo "==> Evaluating ${ENCODER} with ${STEP_DIR}"
+  echo "HF_HOME=${HF_HOME}"
+  echo "VLMEB_LOCAL_FILES_ONLY=${VLMEB_LOCAL_FILES_ONLY}"
   python scripts/evaluate_mcq.py \
     --bench-manifest "${BENCH_MANIFEST}" \
     --feature-index "${FEATURE_ROOT}/${ENCODER}/index.jsonl" \

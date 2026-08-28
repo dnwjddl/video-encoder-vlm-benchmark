@@ -66,6 +66,17 @@ If you use gated Hugging Face models or datasets:
 huggingface-cli login
 ```
 
+If gated models were already downloaded into the configured cache, you can force
+all model loaders to use only local files:
+
+```bash
+export VLMEB_LOCAL_FILES_ONLY=1
+```
+
+This is useful for `internvideo2-clip-1b`: without local-only mode,
+Transformers may still make a Hugging Face metadata request and fail with a 401
+if the current shell is not authenticated.
+
 ## Storage setup
 
 Put large files under `/mnt/disks/data`:
@@ -212,6 +223,8 @@ python scripts/analyze_encoder_no_train.py \
 Run all encoders and aggregate:
 
 ```bash
+source /mnt/disks/data/vlm_encoder_benchmark/env.storage
+VLMEB_LOCAL_FILES_ONLY=1 \
 bash scripts/run_all_no_train_analysis.sh \
   data/manifests/hf_video_debug.jsonl \
   outputs/no_train_diagnostics

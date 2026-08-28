@@ -2,6 +2,7 @@
 set -euo pipefail
 
 export HF_HOME="${HF_HOME:-/mnt/disks/data/hf_cache}"
+export VLMEB_LOCAL_FILES_ONLY="${VLMEB_LOCAL_FILES_ONLY:-0}"
 
 MANIFEST="${1:-data/benchmarks/mcq_all.jsonl}"
 FEATURE_ROOT="${2:-features/pilot_train}"
@@ -47,6 +48,7 @@ run_worker() {
     echo "feature_root=${FEATURE_ROOT}"
     echo "out_root=${OUT_ROOT}"
     echo "HF_HOME=${HF_HOME}"
+    echo "VLMEB_LOCAL_FILES_ONLY=${VLMEB_LOCAL_FILES_ONLY}"
 
     for idx in "${!ENCODERS[@]}"; do
       if [ $((idx % ${#GPUS[@]})) -ne "${gpu_idx}" ]; then

@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import asdict
 import importlib.machinery
+import os
 import sys
 import types
 from typing import Any
@@ -167,6 +168,13 @@ def _needs_standard_loading(exc: AttributeError) -> bool:
     return "all_tied_weights_keys" in message or "_tied_weights_keys" in message
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class FrozenEncoder:
     def __init__(
         self,
@@ -185,7 +193,10 @@ class FrozenEncoder:
         self.model.requires_grad_(False)
 
     def _load_processor(self, cfg: EncoderConfig):
-        kwargs = {"trust_remote_code": cfg.trust_remote_code}
+        kwargs = {
+            "trust_remote_code": cfg.trust_remote_code,
+            "local_files_only": _env_flag("VLMEB_LOCAL_FILES_ONLY"),
+        }
         if cfg.processor == "clip_image":
             return CLIPImageProcessor.from_pretrained(cfg.model_id, **kwargs)
         if cfg.processor == "videomae":
@@ -207,9 +218,14 @@ class FrozenEncoder:
             "trust_remote_code": cfg.trust_remote_code,
             "torch_dtype": self.dtype,
             "low_cpu_mem_usage": cfg.low_cpu_mem_usage,
+            "local_files_only": _env_flag("VLMEB_LOCAL_FILES_ONLY"),
         }
         if cfg.disable_flash_attn:
-            config = AutoConfig.from_pretrained(cfg.model_id, trust_remote_code=cfg.trust_remote_code)
+            config = AutoConfig.from_pretrained(
+                cfg.model_id,
+                trust_remote_code=cfg.trust_remote_code,
+                local_files_only=_env_flag("VLMEB_LOCAL_FILES_ONLY"),
+            )
             _disable_flash_attn_in_config(config)
             with _temporary_flash_attn_stub():
                 model = self._auto_model_from_pretrained(cfg, kwargs, config=config)
@@ -246,6 +262,7 @@ class FrozenEncoder:
                 retry_kwargs["config"] = AutoConfig.from_pretrained(
                     cfg.model_id,
                     trust_remote_code=cfg.trust_remote_code,
+                    local_files_only=_env_flag("VLMEB_LOCAL_FILES_ONLY"),
                 )
             model = AutoModel.from_pretrained(cfg.model_id, **retry_kwargs)
             return model.to(dtype=self.dtype)

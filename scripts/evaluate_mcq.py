@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 from pathlib import Path
 
 import torch
@@ -13,6 +14,13 @@ from vlmevalbench.data import format_choices, read_jsonl, records_by_id, split_p
 from vlmevalbench.projector import MLPProjector
 from vlmevalbench.training import build_inputs_embeds_and_labels
 from vlmevalbench.utils import get_dtype, load_json
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -86,8 +94,14 @@ def main() -> None:
     llm_id = args.llm_id or metadata["llm_id"]
     dtype = get_dtype(args.dtype)
     device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
+    local_files_only = env_flag("VLMEB_LOCAL_FILES_ONLY")
 
-    tokenizer = AutoTokenizer.from_pretrained(llm_id, trust_remote_code=True, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        llm_id,
+        trust_remote_code=True,
+        use_fast=True,
+        local_files_only=local_files_only,
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     llm = AutoModelForCausalLM.from_pretrained(
@@ -95,6 +109,7 @@ def main() -> None:
         torch_dtype=dtype,
         trust_remote_code=True,
         low_cpu_mem_usage=True,
+        local_files_only=local_files_only,
     ).to(device)
     llm.eval()
     llm.requires_grad_(False)

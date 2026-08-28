@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import torch
@@ -17,6 +18,13 @@ from vlmevalbench.training import (
     collate_feature_text,
 )
 from vlmevalbench.utils import get_dtype, save_json, set_seed
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -67,7 +75,13 @@ def main() -> None:
     accelerator = Accelerator(gradient_accumulation_steps=args.grad_accum)
     dtype = get_dtype(args.dtype)
 
-    tokenizer = AutoTokenizer.from_pretrained(args.llm_id, trust_remote_code=True, use_fast=True)
+    local_files_only = env_flag("VLMEB_LOCAL_FILES_ONLY")
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.llm_id,
+        trust_remote_code=True,
+        use_fast=True,
+        local_files_only=local_files_only,
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -76,6 +90,7 @@ def main() -> None:
         torch_dtype=dtype,
         trust_remote_code=True,
         low_cpu_mem_usage=True,
+        local_files_only=local_files_only,
     )
     llm.eval()
     llm.requires_grad_(False)
