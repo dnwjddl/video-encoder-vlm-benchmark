@@ -30,6 +30,12 @@ PALETTE = {
 }
 
 
+def save_figure(fig: plt.Figure, out_prefix: Path) -> None:
+    fig.savefig(out_prefix.with_suffix(".png"), dpi=220, bbox_inches="tight")
+    fig.savefig(out_prefix.with_suffix(".pdf"), bbox_inches="tight")
+    plt.close(fig)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Aggregate MVBench text-only and perturbation filters.")
     parser.add_argument("--manifest", default="data/benchmarks/mvbench_all.jsonl")
@@ -251,8 +257,129 @@ def plot_overview(summary_df: pd.DataFrame, out_prefix: Path) -> None:
     ax.grid(axis="y", alpha=0.25)
 
     fig.suptitle("MVBench Shortcut Filtering and Projector Evaluation", x=0.01, ha="left", fontweight="bold")
-    fig.savefig(out_prefix.with_suffix(".png"), dpi=220)
-    fig.savefig(out_prefix.with_suffix(".pdf"))
+    save_figure(fig, out_prefix)
+
+
+def plot_filter_distribution(all_df: pd.DataFrame, out_prefix: Path) -> None:
+    encoders = all_df["encoder"].astype(str).tolist()
+    y = np.arange(len(encoders))
+    fig, ax = plt.subplots(figsize=(12, max(5, len(encoders) * 0.5)), constrained_layout=True)
+    left = np.zeros(len(all_df))
+    stack_cols = [
+        ("text_only_correct", "text-only correct", PALETTE["text_only"]),
+        ("single_frame_shortcut", "single-frame shortcut", PALETTE["single"]),
+        ("reverse_or_shuffle_shortcut", "reverse/shuffle shortcut", PALETTE["reverse_shuffle"]),
+        ("hard_after_filters", "hard after filters", PALETTE["hard"]),
+    ]
+    for col, label, color in stack_cols:
+        values = pd.to_numeric(all_df[col], errors="coerce").fillna(0).to_numpy(dtype=float)
+        ax.barh(y, values, left=left, label=label, color=color, linewidth=0)
+        left += values
+    ax.set_title("MVBench Filter Distribution", loc="left", fontweight="bold")
+    ax.set_xlabel("questions")
+    ax.set_yticks(y)
+    ax.set_yticklabels(encoders)
+    ax.invert_yaxis()
+    ax.grid(axis="x", alpha=0.25)
+    ax.legend(frameon=False, fontsize=9, loc="lower center", bbox_to_anchor=(0.5, -0.2), ncol=2)
+    save_figure(fig, out_prefix)
+
+
+def plot_filter_rates(all_df: pd.DataFrame, out_prefix: Path) -> None:
+    encoders = all_df["encoder"].astype(str).tolist()
+    y = np.arange(len(encoders))
+    fig, ax = plt.subplots(figsize=(12, max(5, len(encoders) * 0.55)), constrained_layout=True)
+    rate_cols = [
+        ("text_only_rate", "text-only"),
+        ("single_frame_shortcut_rate", "single-frame"),
+        ("reverse_or_shuffle_shortcut_rate", "reverse/shuffle"),
+        ("hard_rate", "hard"),
+    ]
+    height = 0.18
+    for idx, (col, label) in enumerate(rate_cols):
+        values = pd.to_numeric(all_df[col], errors="coerce").fillna(0).to_numpy(dtype=float)
+        ax.barh(y + (idx - 1.5) * height, values, height=height, label=label, linewidth=0)
+    ax.set_title("MVBench Filter Rates", loc="left", fontweight="bold")
+    ax.set_xlabel("rate")
+    ax.set_xlim(0, 1.05)
+    ax.set_yticks(y)
+    ax.set_yticklabels(encoders)
+    ax.invert_yaxis()
+    ax.grid(axis="x", alpha=0.25)
+    ax.legend(frameon=False, fontsize=9, loc="lower center", bbox_to_anchor=(0.5, -0.22), ncol=4)
+    save_figure(fig, out_prefix)
+
+
+def plot_accuracy_after_filtering(all_df: pd.DataFrame, out_prefix: Path) -> None:
+    encoders = all_df["encoder"].astype(str).tolist()
+    y = np.arange(len(encoders))
+    fig, ax = plt.subplots(figsize=(12, max(5, len(encoders) * 0.55)), constrained_layout=True)
+    acc_cols = [
+        ("original_accuracy_all", "original all", PALETTE["all_accuracy"]),
+        ("original_accuracy_hard", "original hard", PALETTE["hard_accuracy"]),
+        ("shared_hard_accuracy", "shared hard", PALETTE["shared_hard_accuracy"]),
+    ]
+    height = 0.22
+    for idx, (col, label, color) in enumerate(acc_cols):
+        values = pd.to_numeric(all_df[col], errors="coerce").fillna(0).to_numpy(dtype=float)
+        bar_positions = y + (idx - 1) * height
+        ax.barh(bar_positions, values, height=height, label=label, color=color, linewidth=0)
+        for y_pos, value in zip(bar_positions, values):
+            if value <= 0:
+                continue
+            inside = value >= 0.12
+            x_pos = value - 0.015 if inside else value + 0.015
+            ax.text(
+                x_pos,
+                y_pos,
+                f"{value:.3f}",
+                va="center",
+                ha="right" if inside else "left",
+                fontsize=7,
+                color="white" if inside else "black",
+                clip_on=False,
+            )
+    ax.set_title("MVBench Accuracy After Filtering", loc="left", fontweight="bold")
+    ax.set_xlabel("accuracy")
+    ax.set_xlim(0, 1.12)
+    ax.set_yticks(y)
+    ax.set_yticklabels(encoders)
+    ax.invert_yaxis()
+    ax.grid(axis="x", alpha=0.25)
+    ax.legend(frameon=False, fontsize=9, loc="lower center", bbox_to_anchor=(0.5, -0.22), ncol=3)
+    save_figure(fig, out_prefix)
+
+
+def plot_remaining_question_counts(all_df: pd.DataFrame, out_prefix: Path) -> None:
+    encoders = all_df["encoder"].astype(str).tolist()
+    y = np.arange(len(encoders))
+    fig, ax = plt.subplots(figsize=(12, max(5, len(encoders) * 0.5)), constrained_layout=True)
+    count_cols = [
+        ("hard_after_filters", "per-encoder hard", PALETTE["hard"]),
+        ("shared_hard_examples", "shared hard", PALETTE["shared_hard_accuracy"]),
+    ]
+    height = 0.28
+    for idx, (col, label, color) in enumerate(count_cols):
+        values = pd.to_numeric(all_df[col], errors="coerce").fillna(0).to_numpy(dtype=float)
+        ax.barh(y + (idx - 0.5) * height, values, height=height, label=label, color=color, linewidth=0)
+    ax.set_title("MVBench Remaining Question Counts", loc="left", fontweight="bold")
+    ax.set_xlabel("questions")
+    ax.set_yticks(y)
+    ax.set_yticklabels(encoders)
+    ax.invert_yaxis()
+    ax.grid(axis="x", alpha=0.25)
+    ax.legend(frameon=False, fontsize=9, loc="lower center", bbox_to_anchor=(0.5, -0.2), ncol=2)
+    save_figure(fig, out_prefix)
+
+
+def plot_separate_overview_panels(summary_df: pd.DataFrame, out_dir: Path) -> None:
+    all_df = summary_df[summary_df["group"] == "ALL"].copy()
+    if all_df.empty:
+        return
+    plot_filter_distribution(all_df, out_dir / "mvbench_filter_distribution")
+    plot_filter_rates(all_df, out_dir / "mvbench_filter_rates")
+    plot_accuracy_after_filtering(all_df, out_dir / "mvbench_accuracy_after_filtering")
+    plot_remaining_question_counts(all_df, out_dir / "mvbench_remaining_question_counts")
 
 
 def plot_task_heatmap(summary_df: pd.DataFrame, out_prefix: Path) -> None:
@@ -278,8 +405,7 @@ def plot_task_heatmap(summary_df: pd.DataFrame, out_prefix: Path) -> None:
             ax.text(col_idx, row_idx, label, ha="center", va="center", fontsize=7, color="white" if matrix[row_idx, col_idx] > 0.55 else "black")
     cbar = plt.colorbar(im, ax=ax, fraction=0.025, pad=0.01)
     cbar.set_label("hard rate")
-    fig.savefig(out_prefix.with_suffix(".png"), dpi=220)
-    fig.savefig(out_prefix.with_suffix(".pdf"))
+    save_figure(fig, out_prefix)
 
 
 def main() -> None:
@@ -330,6 +456,7 @@ def main() -> None:
 
     summary_df = pd.DataFrame(summary_rows)
     plot_overview(summary_df, out_dir / "mvbench_filter_overview")
+    plot_separate_overview_panels(summary_df, out_dir)
     plot_task_heatmap(summary_df, out_dir / "mvbench_task_hardness_heatmap")
 
     print(f"Wrote summary to {out_dir / 'filter_summary.csv'}")

@@ -649,6 +649,10 @@ outputs/mvbench/analysis/filter_summary.csv
 outputs/mvbench/analysis/per_item_filters.csv
 outputs/mvbench/analysis/shared_hard_ids.jsonl
 outputs/mvbench/analysis/mvbench_filter_overview.png
+outputs/mvbench/analysis/mvbench_filter_distribution.png
+outputs/mvbench/analysis/mvbench_filter_rates.png
+outputs/mvbench/analysis/mvbench_accuracy_after_filtering.png
+outputs/mvbench/analysis/mvbench_remaining_question_counts.png
 outputs/mvbench/analysis/mvbench_task_hardness_heatmap.png
 ```
 
