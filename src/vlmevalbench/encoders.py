@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import asdict
+import importlib.machinery
+import sys
+import types
 from typing import Any
 
 import torch
@@ -101,6 +105,63 @@ def _call_vision_tower(model: torch.nn.Module, batch: dict[str, Any]) -> Any:
     return model(**batch)
 
 
+def _disabled_flash_attn(*args, **kwargs):
+    raise RuntimeError("flash-attn was disabled for this encoder run.")
+
+
+@contextmanager
+def _temporary_flash_attn_stub():
+    names = [
+        "flash_attn",
+        "flash_attn.flash_attn_interface",
+        "flash_attn.bert_padding",
+    ]
+    previous = {name: sys.modules.get(name) for name in names}
+
+    package = types.ModuleType("flash_attn")
+    package.__path__ = []
+    package.__spec__ = importlib.machinery.ModuleSpec("flash_attn", loader=None, is_package=True)
+
+    interface = types.ModuleType("flash_attn.flash_attn_interface")
+    interface.__spec__ = importlib.machinery.ModuleSpec("flash_attn.flash_attn_interface", loader=None)
+    interface.flash_attn_unpadded_qkvpacked_func = _disabled_flash_attn
+    interface.flash_attn_varlen_qkvpacked_func = _disabled_flash_attn
+    interface.flash_attn_qkvpacked_func = _disabled_flash_attn
+    interface.flash_attn_func = _disabled_flash_attn
+
+    bert_padding = types.ModuleType("flash_attn.bert_padding")
+    bert_padding.__spec__ = importlib.machinery.ModuleSpec("flash_attn.bert_padding", loader=None)
+    bert_padding.pad_input = _disabled_flash_attn
+    bert_padding.unpad_input = _disabled_flash_attn
+
+    package.flash_attn_interface = interface
+    package.bert_padding = bert_padding
+    sys.modules.update(
+        {
+            "flash_attn": package,
+            "flash_attn.flash_attn_interface": interface,
+            "flash_attn.bert_padding": bert_padding,
+        }
+    )
+
+    try:
+        yield
+    finally:
+        for name, module in previous.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+
+
+def _disable_flash_attn_in_config(config: Any) -> None:
+    if hasattr(config, "use_flash_attn"):
+        config.use_flash_attn = False
+    vision_config = getattr(config, "vision_config", None)
+    if vision_config is not None and hasattr(vision_config, "use_flash_attn"):
+        vision_config.use_flash_attn = False
+
+
 class FrozenEncoder:
     def __init__(
         self,
@@ -142,6 +203,18 @@ class FrozenEncoder:
             "torch_dtype": self.dtype,
             "low_cpu_mem_usage": True,
         }
+        if cfg.disable_flash_attn:
+            config = AutoConfig.from_pretrained(cfg.model_id, trust_remote_code=cfg.trust_remote_code)
+            _disable_flash_attn_in_config(config)
+            with _temporary_flash_attn_stub():
+                try:
+                    model = AutoModel.from_pretrained(cfg.model_id, config=config, **kwargs)
+                except TypeError:
+                    kwargs.pop("torch_dtype", None)
+                    model = AutoModel.from_pretrained(cfg.model_id, config=config, **kwargs)
+                    model = model.to(dtype=self.dtype)
+            return model.to(self.device)
+
         try:
             model = AutoModel.from_pretrained(cfg.model_id, **kwargs)
         except TypeError:

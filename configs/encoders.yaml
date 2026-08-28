@@ -38,6 +38,7 @@ internvit-300m:
   processor: clip_image
   feature_key: last_hidden_state
   drop_cls: false
+  disable_flash_attn: true
   num_frames: 8
   max_tokens: 256
 

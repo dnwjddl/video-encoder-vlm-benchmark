@@ -17,6 +17,7 @@ class EncoderConfig:
     feature_key: str = "last_hidden_state"
     drop_cls: bool = False
     input_layout: str | None = None
+    disable_flash_attn: bool = False
     num_frames: int = 8
     max_tokens: int = 256
     note: str | None = None

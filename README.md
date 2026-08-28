@@ -32,6 +32,10 @@ Video encoder track:
 - `internvideo2-clip-1b`: `OpenGVLab/InternVideo2-CLIP-1B-224p-f8`
 
 Note: `internvideo2-clip-1b` is gated on Hugging Face. Accept the model terms before running it on a server.
+`internvit-300m` is configured with `disable_flash_attn: true` so it can run on
+older Linux systems where the prebuilt `flash-attn` wheel fails with a
+`GLIBC_2.32 not found` error. It uses the same weights with the model's naive
+PyTorch attention path.
 
 ## Recommended experiment size
 
