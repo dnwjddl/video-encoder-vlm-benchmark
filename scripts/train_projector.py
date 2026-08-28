@@ -27,6 +27,14 @@ def env_flag(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def resolve_hf_source(model_id: str, *, local_files_only: bool) -> str:
+    if not local_files_only or Path(model_id).exists():
+        return model_id
+    from huggingface_hub import snapshot_download
+
+    return snapshot_download(repo_id=model_id, repo_type="model", local_files_only=True)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train projector only with frozen visual features and frozen LLM.")
     parser.add_argument("--manifest", required=True)
@@ -76,8 +84,9 @@ def main() -> None:
     dtype = get_dtype(args.dtype)
 
     local_files_only = env_flag("VLMEB_LOCAL_FILES_ONLY")
+    llm_source = resolve_hf_source(args.llm_id, local_files_only=local_files_only)
     tokenizer = AutoTokenizer.from_pretrained(
-        args.llm_id,
+        llm_source,
         trust_remote_code=True,
         use_fast=True,
         local_files_only=local_files_only,
@@ -86,7 +95,7 @@ def main() -> None:
         tokenizer.pad_token = tokenizer.eos_token
 
     llm = AutoModelForCausalLM.from_pretrained(
-        args.llm_id,
+        llm_source,
         torch_dtype=dtype,
         trust_remote_code=True,
         low_cpu_mem_usage=True,

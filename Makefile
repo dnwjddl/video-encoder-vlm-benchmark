@@ -1,9 +1,10 @@
 STORAGE_ROOT ?= /mnt/disks/data/vlm_encoder_benchmark
 HF_HOME ?= /mnt/disks/data/hf_cache
+LLM_ID ?= Qwen/Qwen2.5-7B-Instruct
 PILOT_MCQ ?= data/benchmarks/hf_video_debug_mcq.jsonl
 export HF_HOME
 
-.PHONY: install storage doctor doctor-model data activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel perturb-mcq pilot-mcq train-pilot extract train eval
+.PHONY: install storage doctor doctor-model check-llm download-llm data activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel perturb-mcq pilot-mcq train-pilot extract train eval
 
 install:
 	pip install -e .
@@ -17,6 +18,12 @@ doctor:
 
 doctor-model:
 	python scripts/check_runtime.py --load-model
+
+check-llm:
+	python scripts/check_hf_model_cache.py --model-id $(LLM_ID) --trust-remote-code
+
+download-llm:
+	VLMEB_LOCAL_FILES_ONLY=0 python -c 'from huggingface_hub import snapshot_download; print(snapshot_download("$(LLM_ID)", repo_type="model"))'
 
 data:
 	python scripts/download_data.py \

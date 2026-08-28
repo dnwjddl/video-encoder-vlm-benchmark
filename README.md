@@ -343,6 +343,14 @@ Default setup:
 - `Qwen/Qwen2.5-7B-Instruct`: frozen
 - projector: trainable 2-layer MLP
 
+Before training in local-only mode, cache the frozen LLM once:
+
+```bash
+source /mnt/disks/data/vlm_encoder_benchmark/env.storage
+make download-llm
+VLMEB_LOCAL_FILES_ONLY=1 make check-llm
+```
+
 Run all encoders:
 
 ```bash
