@@ -383,28 +383,41 @@ def _needs_standard_loading(exc: AttributeError) -> bool:
 
 
 def _patch_transformers_tied_weights_compat() -> None:
+    def normalize_tied_weights(raw_keys: Any) -> dict[str, str]:
+        if raw_keys is None:
+            return {}
+        if isinstance(raw_keys, Mapping):
+            return {str(key): str(value) for key, value in raw_keys.items()}
+        if isinstance(raw_keys, (list, tuple, set)):
+            return {str(key): str(key) for key in raw_keys}
+        return {}
+
     def all_tied_weights_keys(self) -> dict[str, str]:
+        stored_keys = self.__dict__.get("_vlmeb_all_tied_weights_keys")
+        if stored_keys is not None:
+            return normalize_tied_weights(stored_keys)
+
         keys: dict[str, str] = {}
         for source in [type(self), self]:
             for attr_name in ("_tied_weights_keys", "_dynamic_tied_weights_keys"):
                 raw_keys = getattr(source, attr_name, None)
-                if raw_keys is None:
-                    continue
-                if isinstance(raw_keys, Mapping):
-                    keys.update({str(key): str(value) for key, value in raw_keys.items()})
-                elif isinstance(raw_keys, (list, tuple, set)):
-                    keys.update({str(key): str(key) for key in raw_keys})
+                keys.update(normalize_tied_weights(raw_keys))
         return keys
 
+    def set_all_tied_weights_keys(self, value: Any) -> None:
+        self.__dict__["_vlmeb_all_tied_weights_keys"] = normalize_tied_weights(value)
+
+    compat_property = property(all_tied_weights_keys, set_all_tied_weights_keys)
+
     try:
-        torch.nn.Module.all_tied_weights_keys = property(all_tied_weights_keys)
+        torch.nn.Module.all_tied_weights_keys = compat_property
     except Exception:
         pass
 
     try:
         from transformers.modeling_utils import PreTrainedModel
 
-        PreTrainedModel.all_tied_weights_keys = property(all_tied_weights_keys)
+        PreTrainedModel.all_tied_weights_keys = compat_property
     except Exception:
         return
 
