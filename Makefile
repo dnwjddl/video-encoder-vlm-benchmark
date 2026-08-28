@@ -5,13 +5,15 @@ PILOT_MCQ ?= data/benchmarks/hf_video_debug_mcq.jsonl
 TRAIN5K_MANIFEST ?= data/manifests/train_5k_msrvtt.jsonl
 TRAIN20K_MANIFEST ?= data/manifests/train_20k_msrvtt.jsonl
 TRAIN20K_EPOCHS ?= $(or $(EPOCHS),2)
+TRAIN_GPUS ?= 0,1,2,3
+ALL_ENCODERS ?= clip-vit-l-14-336,siglip-so400m,siglip2-so400m,dinov2-vitl14,internvit-300m,videomaev2-base,vjepa2-vith-256,internvideo2-clip-s
 ENCODER ?= internvit-300m
 GPU ?= 0
 DIAGNOSTICS_TABLE ?= outputs/no_train_diagnostics_table.csv
 DIAGNOSTICS_FIGURE ?= outputs/figures/no_train_diagnostics_overview
 export HF_HOME
 
-.PHONY: install storage doctor doctor-model check-encoder smoke-encoder check-problem-encoders check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k train-manifest-20k activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel figure-diagnostics perturb-mcq pilot-mcq train-pilot train-5k train-20k extract train eval
+.PHONY: install storage doctor doctor-model check-encoder smoke-encoder check-problem-encoders check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k train-manifest-20k activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel figure-diagnostics perturb-mcq pilot-mcq train-pilot train-5k train-20k train-20k-all extract train eval
 
 install:
 	pip install -e .
@@ -63,7 +65,7 @@ data:
 		--video-root $(STORAGE_ROOT)/videos
 
 train-manifest-5k:
-	python scripts/download_hf_video_dataset.py \
+	python scripts/check_jsonl_rows.py --path $(TRAIN5K_MANIFEST) --min-rows 5000 || python scripts/download_hf_video_dataset.py \
 		--dataset-id VLM2Vec/MSR-VTT \
 		--config-name train_7k \
 		--split train \
@@ -79,7 +81,7 @@ train-manifest-5k:
 		--validate
 
 train-manifest-20k:
-	python scripts/download_hf_video_dataset.py \
+	python scripts/check_jsonl_rows.py --path $(TRAIN20K_MANIFEST) --min-rows 20000 || python scripts/download_hf_video_dataset.py \
 		--dataset-id VLM2Vec/MSR-VTT \
 		--config-name train_9k \
 		--split train \
@@ -182,6 +184,17 @@ train-5k: train-manifest-5k
 
 train-20k: train-manifest-20k
 	EPOCHS=$(TRAIN20K_EPOCHS) bash scripts/run_parallel_pilot_train.sh \
+		$(TRAIN20K_MANIFEST) \
+		features/train_20k \
+		checkpoints/projectors_20k \
+		runs/train_20k
+
+train-20k-all: train-manifest-20k
+	EPOCHS=$(TRAIN20K_EPOCHS) \
+	GPUS=$(if $(GPUS),$(GPUS),$(TRAIN_GPUS)) \
+	ENCODERS=$(ALL_ENCODERS) \
+	SCHEDULER=dynamic \
+	bash scripts/run_parallel_pilot_train.sh \
 		$(TRAIN20K_MANIFEST) \
 		features/train_20k \
 		checkpoints/projectors_20k \

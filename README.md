@@ -230,6 +230,23 @@ ALLOW_MISSING_MEDIA=1 \
 make train-20k
 ```
 
+Or run all configured encoders as one dynamic GPU queue. This starts one worker
+per GPU; when a worker finishes an encoder, it automatically grabs the next
+remaining encoder.
+
+```bash
+VLMEB_LOCAL_FILES_ONLY=1 \
+GPUS=0,1,2,3 \
+MAX_TOKENS=64 \
+MAX_LENGTH=1024 \
+GRAD_ACCUM=8 \
+ALLOW_MISSING_MEDIA=1 \
+make train-20k-all
+```
+
+By default, `train-20k-all` uses `EPOCHS=2`. Override with `EPOCHS=1` or
+`EPOCHS=3` only when you intentionally want a different analysis budget.
+
 ### If you need actual video files for no-training diagnostics
 
 The instruction datasets above often provide annotations and relative video ids, not the raw MP4 files. If your manifest paths look like `/data/videos/...` but `os.path.exists(...)` returns `False`, use a small directly downloadable video subset first.
