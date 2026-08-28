@@ -5,7 +5,7 @@ PILOT_MCQ ?= data/benchmarks/hf_video_debug_mcq.jsonl
 TRAIN5K_MANIFEST ?= data/manifests/train_5k_msrvtt.jsonl
 export HF_HOME
 
-.PHONY: install storage doctor doctor-model check-llm download-llm data train-manifest-5k activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel perturb-mcq pilot-mcq train-pilot train-5k extract train eval
+.PHONY: install storage doctor doctor-model check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel perturb-mcq pilot-mcq train-pilot train-5k extract train eval
 
 install:
 	pip install -e .
@@ -20,11 +20,17 @@ doctor:
 doctor-model:
 	python scripts/check_runtime.py --load-model
 
+check-flash-attn:
+	python scripts/check_runtime.py --model-id OpenGVLab/InternVideo2_CLIP_S --load-model
+
 check-llm:
 	python scripts/check_hf_model_cache.py --model-id $(LLM_ID) --trust-remote-code
 
 download-llm:
 	VLMEB_LOCAL_FILES_ONLY=0 python -c 'from huggingface_hub import snapshot_download; print(snapshot_download("$(LLM_ID)", repo_type="model"))'
+
+download-internvideo2-clip-s:
+	VLMEB_LOCAL_FILES_ONLY=0 python -c 'from huggingface_hub import snapshot_download; print(snapshot_download("OpenGVLab/InternVideo2_CLIP_S", repo_type="model"))'
 
 data:
 	python scripts/download_data.py \

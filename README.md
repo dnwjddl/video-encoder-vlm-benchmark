@@ -81,6 +81,17 @@ This is useful for gated models: without local-only mode,
 Transformers may still make a Hugging Face metadata request and fail with a 401
 if the current shell is not authenticated.
 
+For `internvit-300m` and `internvideo2-clip-s`, this harness disables
+flash/fused attention in the model config and provides a small import stub for
+the `flash_attn` package. That means the recommended path is to avoid installing
+`flash-attn` unless you specifically want to benchmark the vendor implementation.
+
+```bash
+source /mnt/disks/data/vlm_encoder_benchmark/env.storage
+make download-internvideo2-clip-s
+VLMEB_LOCAL_FILES_ONLY=1 make check-flash-attn
+```
+
 ## Storage setup
 
 Put large files under `/mnt/disks/data`:

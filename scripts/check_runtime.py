@@ -67,6 +67,27 @@ def check_transformers_loaders(source: str, label: str) -> None:
     return config, AutoModel
 
 
+def check_flash_attn_stub() -> None:
+    from vlmevalbench.encoders import _temporary_flash_attn_stub
+
+    try:
+        with _temporary_flash_attn_stub():
+            from flash_attn.bert_padding import pad_input, unpad_input
+            from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
+            from flash_attn.modules.mlp import FusedMLP, Mlp
+            from flash_attn.ops.rms_norm import DropoutAddRMSNorm
+
+            assert callable(flash_attn_varlen_qkvpacked_func)
+            assert callable(pad_input)
+            assert callable(unpad_input)
+            assert Mlp is not None
+            assert FusedMLP is not None
+            assert DropoutAddRMSNorm is not None
+        print_status("flash-attn stub imports", True)
+    except Exception as exc:
+        print_status("flash-attn stub imports", False, short_error(exc))
+
+
 def main() -> None:
     args = parse_args()
 
@@ -85,6 +106,7 @@ def main() -> None:
 
     source = inspect.getsource(encoders.FrozenEncoder._load_processor)
     print_status("local-only code", "local_files_only" in source)
+    check_flash_attn_stub()
 
     if not os.environ.get("HF_HOME"):
         print_status("HF_HOME", False, "not set")
