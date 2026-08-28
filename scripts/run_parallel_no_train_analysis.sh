@@ -77,14 +77,14 @@ run_worker() {
     done
   ) > "${log_file}" 2>&1 &
 
-  echo "$!"
+  WORKER_PID="$!"
 }
 
 pids=()
 for gpu_idx in "${!GPUS[@]}"; do
-  pid="$(run_worker "${gpu_idx}")"
-  pids+=("${pid}")
-  echo "Started no-train worker on GPU ${GPUS[$gpu_idx]}; pid=${pid}; log=${RUN_ROOT}/worker_gpu${GPUS[$gpu_idx]}.log"
+  run_worker "${gpu_idx}"
+  pids+=("${WORKER_PID}")
+  echo "Started no-train worker on GPU ${GPUS[$gpu_idx]}; pid=${WORKER_PID}; log=${RUN_ROOT}/worker_gpu${GPUS[$gpu_idx]}.log"
 done
 
 failed=0
