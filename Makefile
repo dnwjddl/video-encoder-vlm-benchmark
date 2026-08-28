@@ -7,13 +7,17 @@ TRAIN20K_MANIFEST ?= data/manifests/train_20k_msrvtt.jsonl
 TRAIN20K_EPOCHS ?= $(or $(EPOCHS),2)
 TRAIN_GPUS ?= 0,1,2,3
 ALL_ENCODERS ?= clip-vit-l-14-336,siglip-so400m,siglip2-so400m,dinov2-vitl14,internvit-300m,videomaev2-base,vjepa2-vith-256,internvideo2-clip-s
+MVBENCH_ROOT ?= /home/woojunghan_google_com/hf_cache/mvbench_video
+MVBENCH_MANIFEST ?= data/benchmarks/mvbench_all.jsonl
+MVBENCH_VALIDATE_MEDIA ?= 0
+MVBENCH_SKIP_MISSING_MEDIA ?= 1
 ENCODER ?= internvit-300m
 GPU ?= 0
 DIAGNOSTICS_TABLE ?= outputs/no_train_diagnostics_table.csv
 DIAGNOSTICS_FIGURE ?= outputs/figures/no_train_diagnostics_overview
 export HF_HOME
 
-.PHONY: install storage doctor doctor-model check-encoder smoke-encoder check-problem-encoders check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k train-manifest-20k activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel figure-diagnostics perturb-mcq pilot-mcq train-pilot train-5k train-20k train-20k-all extract train eval
+.PHONY: install storage doctor doctor-model check-encoder smoke-encoder check-problem-encoders check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k train-manifest-20k mvbench-manifest mvbench-eval mvbench-analyze activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel figure-diagnostics perturb-mcq pilot-mcq train-pilot train-5k train-20k train-20k-all extract train eval
 
 install:
 	pip install -e .
@@ -199,6 +203,25 @@ train-20k-all: train-manifest-20k
 		features/train_20k \
 		checkpoints/projectors_20k \
 		runs/train_20k
+
+mvbench-manifest:
+	python scripts/build_mvbench_manifest.py --mvbench-root $(MVBENCH_ROOT) --out $(MVBENCH_MANIFEST) $(if $(filter 1,$(MVBENCH_SKIP_MISSING_MEDIA)),--skip-missing-media,) $(if $(filter 1,$(MVBENCH_VALIDATE_MEDIA)),--validate-media,)
+
+mvbench-eval: mvbench-manifest
+	bash scripts/run_parallel_mvbench_eval.sh \
+		$(MVBENCH_MANIFEST) \
+		features/mvbench \
+		checkpoints/projectors_20k \
+		outputs/mvbench \
+		runs/mvbench_eval
+
+mvbench-analyze:
+	python scripts/aggregate_mvbench_filters.py \
+		--manifest $(MVBENCH_MANIFEST) \
+		--text-predictions outputs/mvbench/text_only/predictions.jsonl \
+		--eval-root outputs/mvbench/projector_eval \
+		--out-dir outputs/mvbench/analysis \
+		--encoders $(ALL_ENCODERS)
 
 train:
 	bash scripts/run_all_train.sh data/manifests/train_230k.jsonl features/train_230k checkpoints/projectors

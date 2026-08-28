@@ -10,7 +10,7 @@ import torch
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from vlmevalbench.data import format_choices, read_jsonl, records_by_id, split_prompt_on_visual, write_jsonl
+from vlmevalbench.data import format_choices, normalize_choice_answer, read_jsonl, split_prompt_on_visual, write_jsonl
 from vlmevalbench.projector import MLPProjector
 from vlmevalbench.training import build_inputs_embeds_and_labels
 from vlmevalbench.utils import get_dtype, load_json
@@ -163,14 +163,18 @@ def main() -> None:
                 max_length=args.max_length,
             )
         pred = min(scores, key=scores.get)
-        gold = str(record.get("answer", "")).strip().upper()
+        gold = normalize_choice_answer(record.get("answer"), [str(choice) for choice in choices])
         correct = pred == gold
         benchmark = str(record.get("benchmark") or record.get("source") or "unknown")
+        task_type = str(record.get("task_type") or benchmark)
+        grouped.setdefault("ALL", []).append(correct)
         grouped.setdefault(benchmark, []).append(correct)
         predictions.append(
             {
                 "id": record_id,
+                "source": record.get("source", "unknown"),
                 "benchmark": benchmark,
+                "task_type": task_type,
                 "prediction": pred,
                 "answer": gold,
                 "correct": correct,

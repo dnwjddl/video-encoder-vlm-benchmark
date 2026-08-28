@@ -615,6 +615,47 @@ outputs/benchmark_table.csv
 
 Rows are encoders. Columns are benchmarks. Values are accuracies.
 
+## 10. MVBench shortcut-filter evaluation
+
+For MVBench, use the stricter analysis protocol:
+
+1. evaluate text-only Qwen with no visual input,
+2. evaluate each trained encoder/projector with `single`, `reverse`, and `shuffle` frames,
+3. exclude questions solved by those shortcuts,
+4. compare encoder/projector accuracy on the remaining hard subset.
+
+If MVBench is stored at `/home/woojunghan_google_com/hf_cache/mvbench_video`,
+run:
+
+```bash
+source /mnt/disks/data/vlm_encoder_benchmark/env.storage
+export VLMEB_LOCAL_FILES_ONLY=1
+
+GPUS=0,1,2,3 \
+MAX_TOKENS=64 \
+MAX_LENGTH=1024 \
+ALLOW_MISSING_MEDIA=1 \
+make mvbench-eval
+```
+
+This writes:
+
+```text
+data/benchmarks/mvbench_all.jsonl
+features/mvbench/
+outputs/mvbench/text_only/
+outputs/mvbench/projector_eval/
+outputs/mvbench/analysis/filter_summary.csv
+outputs/mvbench/analysis/per_item_filters.csv
+outputs/mvbench/analysis/shared_hard_ids.jsonl
+outputs/mvbench/analysis/mvbench_filter_overview.png
+outputs/mvbench/analysis/mvbench_task_hardness_heatmap.png
+```
+
+`filter_summary.csv` contains the main numbers: text-only count, single-frame
+shortcut count, reverse/shuffle shortcut count, remaining hard-question count,
+all-question accuracy, per-encoder hard accuracy, and shared-hard accuracy.
+
 ## Practical run order
 
 For a new server, do this first:

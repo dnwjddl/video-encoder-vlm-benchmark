@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import random
 from pathlib import Path
 
 import torch
@@ -29,7 +30,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--skip-existing", action="store_true")
     parser.add_argument("--allow-missing-media", action="store_true")
+    parser.add_argument(
+        "--frame-mode",
+        default="original",
+        choices=["original", "single", "reverse", "shuffle"],
+        help="Frame perturbation mode for benchmark shortcut analysis.",
+    )
     return parser.parse_args()
+
+
+def apply_frame_mode(frames: list, mode: str, *, seed: int, record_id: str) -> list:
+    if mode == "original":
+        return list(frames)
+    if mode == "single":
+        if not frames:
+            return frames
+        frame = frames[len(frames) // 2]
+        return [frame.copy() for _ in frames]
+    if mode == "reverse":
+        return list(reversed(frames))
+    if mode == "shuffle":
+        shuffled = list(frames)
+        rng = random.Random(f"{seed}:{record_id}")
+        rng.shuffle(shuffled)
+        return shuffled
+    raise ValueError(f"Unknown frame mode: {mode}")
 
 
 def main() -> None:
@@ -68,7 +93,7 @@ def main() -> None:
             index_records.append({"id": record_id, "feature_path": str(feature_path), "shape": shape})
             media_path = record.get("media_path")
             if media_path:
-                media_feature_cache.setdefault(str(Path(media_path)), (str(feature_path), shape))
+                media_feature_cache.setdefault(f"{args.frame_mode}:{Path(media_path)}", (str(feature_path), shape))
             continue
 
         media_path = record.get("media_path")
@@ -81,7 +106,7 @@ def main() -> None:
                 "Set media_path correctly or pass --allow-missing-media."
             )
 
-        cache_key = str(Path(media_path))
+        cache_key = f"{args.frame_mode}:{Path(media_path)}"
         cached = media_feature_cache.get(cache_key)
         if cached is not None:
             cached_feature_path, shape = cached
@@ -90,6 +115,7 @@ def main() -> None:
 
         try:
             frames = load_media_frames(media_path, record.get("media_type", "video"), cfg.num_frames)
+            frames = apply_frame_mode(frames, args.frame_mode, seed=args.seed, record_id=record_id)
         except Exception as exc:
             if args.allow_missing_media:
                 skipped += 1
@@ -129,6 +155,7 @@ def main() -> None:
             "num_unique_media_features": len(media_feature_cache),
             "skipped": skipped,
             "skipped_decode": skipped_decode,
+            "frame_mode": args.frame_mode,
         },
     )
     if not index_records:
