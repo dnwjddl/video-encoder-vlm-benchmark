@@ -35,10 +35,12 @@ run_worker() {
   local gpu_idx="$1"
   local gpu="${GPUS[$gpu_idx]}"
   local log_file="${RUN_ROOT}/worker_gpu${gpu}.log"
+  local status_file="${RUN_ROOT}/worker_gpu${gpu}.status"
 
   (
     set -euo pipefail
     export CUDA_VISIBLE_DEVICES="${gpu}"
+    : > "${status_file}"
     echo "worker_gpu=${gpu}"
     echo "manifest=${MANIFEST}"
     echo "llm_id=${LLM_ID}"
@@ -53,16 +55,19 @@ run_worker() {
 
       encoder="${ENCODERS[$idx]}"
       echo "==> Extracting ${encoder} on GPU ${gpu}"
-      python scripts/extract_features.py \
+      if ! python scripts/extract_features.py \
         --manifest "${MANIFEST}" \
         --encoder "${encoder}" \
         --out-dir "${FEATURE_ROOT}/${encoder}" \
         --max-tokens "${MAX_TOKENS}" \
         --dtype "${DTYPE}" \
-        --skip-existing
+        --skip-existing; then
+        echo "FAIL extract ${encoder}" >> "${status_file}"
+        exit 1
+      fi
 
       echo "==> Training projector for ${encoder} on GPU ${gpu}"
-      python scripts/train_projector.py \
+      if ! python scripts/train_projector.py \
         --manifest "${MANIFEST}" \
         --feature-index "${FEATURE_ROOT}/${encoder}/index.jsonl" \
         --out-dir "${OUT_ROOT}/${encoder}" \
@@ -75,7 +80,11 @@ run_worker() {
         --dtype "${DTYPE}" \
         --max-length "${MAX_LENGTH}" \
         --num-workers "${NUM_WORKERS}" \
-        --save-every-steps "${SAVE_EVERY_STEPS}"
+        --save-every-steps "${SAVE_EVERY_STEPS}"; then
+        echo "FAIL train ${encoder}" >> "${status_file}"
+        exit 1
+      fi
+      echo "OK ${encoder}" >> "${status_file}"
     done
   ) > "${log_file}" 2>&1 &
 
@@ -97,9 +106,14 @@ for pid in "${pids[@]}"; do
 done
 
 if [ "${failed}" -ne 0 ]; then
+  echo "Worker status:"
+  cat "${RUN_ROOT}"/worker_gpu*.status 2>/dev/null || true
   echo "One or more pilot training jobs failed. Check logs under ${RUN_ROOT}." >&2
   exit 1
 fi
+
+echo "Worker status:"
+cat "${RUN_ROOT}"/worker_gpu*.status 2>/dev/null || true
 
 echo "All pilot training jobs completed."
 echo "Checkpoints: ${OUT_ROOT}"
