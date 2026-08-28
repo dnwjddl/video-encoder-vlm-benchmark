@@ -560,10 +560,12 @@ class FrozenEncoder:
         if "pixel_values" in batch and self.cfg.input_layout == "bcthw":
             # VideoMAEImageProcessor usually returns B,T,C,H,W; VideoMAEv2 remote code expects B,C,T,H,W.
             values = batch["pixel_values"]
-            if values.ndim == 5 and values.shape[2] in {1, 3}:
+            if values.ndim == 5 and values.shape[1] in {1, 3}:
                 pass
-            elif values.ndim == 5:
+            elif values.ndim == 5 and values.shape[2] in {1, 3}:
                 batch["pixel_values"] = values.permute(0, 2, 1, 3, 4).contiguous()
+            elif values.ndim == 5:
+                raise RuntimeError(f"Cannot infer video tensor layout for pixel_values shape {tuple(values.shape)}")
 
         batch = _move_to_device(batch, self.device, self.dtype)
         if self.cfg.feature_key in {"extract_features", "forward_features"} and hasattr(self.model, self.cfg.feature_key):
