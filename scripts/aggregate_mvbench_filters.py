@@ -43,6 +43,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-root", default="outputs/mvbench/projector_eval")
     parser.add_argument("--out-dir", default="outputs/mvbench/analysis")
     parser.add_argument("--encoders", default=None, help="Comma-separated encoder list. Defaults to discovered eval dirs.")
+    parser.add_argument(
+        "--skip-incomplete",
+        action="store_true",
+        help="Skip encoders that do not yet have original/single/reverse/shuffle predictions.",
+    )
     return parser.parse_args()
 
 
@@ -64,6 +69,15 @@ def load_predictions(eval_root: Path, encoder: str) -> dict[str, dict[str, dict[
             raise FileNotFoundError(f"Missing {mode} predictions for {encoder}: {path}")
         out[mode] = load_by_id(path)
     return out
+
+
+def missing_prediction_paths(eval_root: Path, encoder: str) -> list[Path]:
+    missing = []
+    for mode in MODES:
+        path = eval_root / encoder / mode / "predictions.jsonl"
+        if not path.exists() or path.stat().st_size == 0:
+            missing.append(path)
+    return missing
 
 
 def correct(row: dict[str, Any] | None) -> bool:
@@ -93,7 +107,10 @@ def build_rows(
     text_by_id: dict[str, dict[str, Any]],
     manifest_map: dict[str, dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    original_ids = sorted(preds["original"].keys())
+    common_mode_ids = set(preds["original"].keys())
+    for mode in MODES[1:]:
+        common_mode_ids &= set(preds[mode].keys())
+    original_ids = sorted(set(manifest_map.keys()) & common_mode_ids)
     per_item = []
     for item_id in original_ids:
         text_correct = correct(text_by_id.get(item_id))
@@ -249,7 +266,7 @@ def plot_overview(summary_df: pd.DataFrame, out_prefix: Path) -> None:
     shared_counts = pd.to_numeric(all_df["shared_hard_examples"], errors="coerce").fillna(0).to_numpy(dtype=float)
     ax.plot(x, hard_counts, marker="o", label="per-encoder hard", color=PALETTE["hard"])
     ax.plot(x, shared_counts, marker="o", label="shared hard", color=PALETTE["shared_hard_accuracy"])
-    ax.set_title("Remaining Question Counts", loc="left", fontweight="bold")
+    ax.set_title("Hard Questions Left After Filtering", loc="left", fontweight="bold")
     ax.set_ylabel("questions")
     ax.set_xticks(x)
     ax.set_xticklabels(encoders, rotation=35, ha="right")
@@ -362,7 +379,7 @@ def plot_remaining_question_counts(all_df: pd.DataFrame, out_prefix: Path) -> No
     for idx, (col, label, color) in enumerate(count_cols):
         values = pd.to_numeric(all_df[col], errors="coerce").fillna(0).to_numpy(dtype=float)
         ax.barh(y + (idx - 0.5) * height, values, height=height, label=label, color=color, linewidth=0)
-    ax.set_title("MVBench Remaining Question Counts", loc="left", fontweight="bold")
+    ax.set_title("MVBench Hard Questions Left After Filtering", loc="left", fontweight="bold")
     ax.set_xlabel("questions")
     ax.set_yticks(y)
     ax.set_yticklabels(encoders)
@@ -420,8 +437,22 @@ def main() -> None:
     encoders = discover_encoders(eval_root, args.encoders)
     per_encoder_items = {}
     summary_rows = []
+    skipped = []
 
     for encoder in encoders:
+        missing = missing_prediction_paths(eval_root, encoder)
+        if missing:
+            message = f"Skipping incomplete encoder {encoder}; missing: {', '.join(str(path) for path in missing)}"
+            if not args.skip_incomplete:
+                raise FileNotFoundError(message)
+            print(f"Warning: {message}")
+            skipped.append(
+                {
+                    "encoder": encoder,
+                    "missing_files": ";".join(str(path) for path in missing),
+                }
+            )
+            continue
         preds = load_predictions(eval_root, encoder)
         per_item, encoder_summary = build_rows(
             encoder=encoder,
@@ -433,6 +464,11 @@ def main() -> None:
         summary_rows.extend(encoder_summary)
         hard_rows = [manifest_map[item["id"]] | {"filter_encoder": encoder} for item in per_item if item["hard_after_filters"] and item["id"] in manifest_map]
         write_jsonl(out_dir / "hard_ids_per_encoder" / f"{encoder}.jsonl", hard_rows)
+
+    if skipped:
+        write_csv(out_dir / "skipped_incomplete_encoders.csv", skipped)
+    if not per_encoder_items:
+        raise RuntimeError("No complete encoders were available for MVBench analysis.")
 
     common_ids: set[str] | None = None
     for items in per_encoder_items.values():

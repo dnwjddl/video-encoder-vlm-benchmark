@@ -11,6 +11,7 @@ MVBENCH_ROOT ?= /home/woojunghan_google_com/hf_cache/mvbench_video
 MVBENCH_MANIFEST ?= data/benchmarks/mvbench_all.jsonl
 MVBENCH_VALIDATE_MEDIA ?= 0
 MVBENCH_SKIP_MISSING_MEDIA ?= 1
+MVBENCH_ANALYZE_SKIP_INCOMPLETE ?= 1
 ENCODER ?= internvit-300m
 GPU ?= 0
 DIAGNOSTICS_TABLE ?= outputs/no_train_diagnostics_table.csv
@@ -221,7 +222,8 @@ mvbench-analyze:
 		--text-predictions outputs/mvbench/text_only/predictions.jsonl \
 		--eval-root outputs/mvbench/projector_eval \
 		--out-dir outputs/mvbench/analysis \
-		--encoders $(ALL_ENCODERS)
+		--encoders $(ALL_ENCODERS) \
+		$(if $(filter 1,$(MVBENCH_ANALYZE_SKIP_INCOMPLETE)),--skip-incomplete,)
 
 train:
 	bash scripts/run_all_train.sh data/manifests/train_230k.jsonl features/train_230k checkpoints/projectors

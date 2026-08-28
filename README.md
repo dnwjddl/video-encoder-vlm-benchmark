@@ -659,6 +659,8 @@ outputs/mvbench/analysis/mvbench_task_hardness_heatmap.png
 `filter_summary.csv` contains the main numbers: text-only count, single-frame
 shortcut count, reverse/shuffle shortcut count, remaining hard-question count,
 all-question accuracy, per-encoder hard accuracy, and shared-hard accuracy.
+`mvbench_remaining_question_counts.png` shows how many hard questions are left
+after shortcut filtering for each encoder and for the shared-hard subset.
 
 ## Practical run order
 
