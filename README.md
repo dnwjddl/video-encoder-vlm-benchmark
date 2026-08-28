@@ -372,6 +372,20 @@ Run all training-free diagnostics across GPUs 0, 1, 2, and 3:
 GPUS=0,1,2,3 make diagnose-parallel
 ```
 
+Completed encoder outputs are skipped automatically. To rerun from scratch, use:
+
+```bash
+FORCE=1 GPUS=0,1,2,3 make diagnose-parallel
+```
+
+If one encoder is blocked by a missing dependency, run the rest first:
+
+```bash
+ENCODERS=clip-vit-l-14-336,siglip-so400m,siglip2-so400m,dinov2-vitl14,videomaev2-base,vjepa2-vith-256 \
+GPUS=0,1,2,3 \
+make diagnose-parallel
+```
+
 Run a small projector pilot on representative encoders:
 
 ```bash

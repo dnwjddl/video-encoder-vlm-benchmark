@@ -12,6 +12,8 @@ GPUS_CSV="${GPUS:-0,1,2,3}"
 DTYPE="${DTYPE:-bf16}"
 LIMIT="${LIMIT:-}"
 STRICT_MEDIA="${STRICT_MEDIA:-0}"
+FORCE="${FORCE:-0}"
+CONTINUE_ON_ERROR="${CONTINUE_ON_ERROR:-1}"
 
 IFS=',' read -r -a ENCODERS <<< "${ENCODERS_CSV}"
 IFS=',' read -r -a GPUS <<< "${GPUS_CSV}"
@@ -42,6 +44,13 @@ run_worker() {
       fi
 
       encoder="${ENCODERS[$idx]}"
+      if [ "${FORCE}" != "1" ] \
+        && [ -s "${OUT_ROOT}/${encoder}/per_example.jsonl" ] \
+        && [ -s "${OUT_ROOT}/${encoder}/summary.csv" ]; then
+        echo "==> Skipping ${encoder}; existing outputs found. Set FORCE=1 to rerun."
+        continue
+      fi
+
       echo "==> No-train diagnostics for ${encoder} on GPU ${gpu}"
 
       args=(
@@ -59,7 +68,12 @@ run_worker() {
         args+=(--strict-media)
       fi
 
-      python "${args[@]}"
+      if ! python "${args[@]}"; then
+        echo "Warning: diagnostics failed for ${encoder} on GPU ${gpu}."
+        if [ "${CONTINUE_ON_ERROR}" != "1" ]; then
+          exit 1
+        fi
+      fi
     done
   ) > "${log_file}" 2>&1 &
 
