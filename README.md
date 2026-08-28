@@ -188,10 +188,13 @@ make train-5k
 
 ### 20K analysis training manifest
 
-For a cleaner encoder comparison, prefer more data over more epochs. The 20K
-target uses `VLM2Vec/MSR-VTT` `train_9k`, expands up to 3 captions per video,
-and writes a separate manifest/checkpoint/run tree so the 5K smoke run does not
-mix with the analysis run.
+For a cleaner encoder comparison, prefer more data over many repeated epochs.
+The 20K target uses the Hugging Face dataset `VLM2Vec/MSR-VTT`, config
+`train_9k`. MSR-VTT has roughly 10K video clips and 200K captions; this target
+samples 20K caption-alignment examples from the 9K-video training split,
+expanding up to 3 captions per video. It writes a separate
+manifest/checkpoint/run tree so the 5K smoke run does not mix with the analysis
+run.
 
 ```bash
 source /mnt/disks/data/vlm_encoder_benchmark/env.storage
@@ -203,7 +206,7 @@ Recommended analysis run:
 
 ```bash
 VLMEB_LOCAL_FILES_ONLY=1 \
-EPOCHS=1 \
+EPOCHS=2 \
 GPUS=0,1,2,3 \
 ENCODERS=clip-vit-l-14-336,siglip-so400m,siglip2-so400m,dinov2-vitl14 \
 MAX_TOKENS=64 \
@@ -217,7 +220,7 @@ Then run the remaining encoders with the same settings:
 
 ```bash
 VLMEB_LOCAL_FILES_ONLY=1 \
-EPOCHS=1 \
+EPOCHS=2 \
 GPUS=0,1,2,3 \
 ENCODERS=internvit-300m,videomaev2-base,vjepa2-vith-256,internvideo2-clip-s \
 MAX_TOKENS=64 \

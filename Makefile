@@ -4,6 +4,7 @@ LLM_ID ?= Qwen/Qwen2.5-7B-Instruct
 PILOT_MCQ ?= data/benchmarks/hf_video_debug_mcq.jsonl
 TRAIN5K_MANIFEST ?= data/manifests/train_5k_msrvtt.jsonl
 TRAIN20K_MANIFEST ?= data/manifests/train_20k_msrvtt.jsonl
+TRAIN20K_EPOCHS ?= $(or $(EPOCHS),2)
 ENCODER ?= internvit-300m
 GPU ?= 0
 DIAGNOSTICS_TABLE ?= outputs/no_train_diagnostics_table.csv
@@ -180,7 +181,7 @@ train-5k: train-manifest-5k
 		runs/train_5k
 
 train-20k: train-manifest-20k
-	bash scripts/run_parallel_pilot_train.sh \
+	EPOCHS=$(TRAIN20K_EPOCHS) bash scripts/run_parallel_pilot_train.sh \
 		$(TRAIN20K_MANIFEST) \
 		features/train_20k \
 		checkpoints/projectors_20k \
