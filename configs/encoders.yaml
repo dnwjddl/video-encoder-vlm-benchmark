@@ -57,7 +57,7 @@ videomaev2-base:
   model_id: OpenGVLab/VideoMAEv2-Base
   trust_remote_code: true
   processor: videomae
-  feature_key: last_hidden_state
+  feature_key: extract_features
   input_layout: bcthw
   low_cpu_mem_usage: false
   num_frames: 16

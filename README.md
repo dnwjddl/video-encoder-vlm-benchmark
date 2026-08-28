@@ -92,6 +92,17 @@ make download-internvideo2-clip-s
 VLMEB_LOCAL_FILES_ONLY=1 make check-flash-attn
 ```
 
+To check the encoders that most often hit remote-code runtime issues:
+
+```bash
+source /mnt/disks/data/vlm_encoder_benchmark/env.storage
+export VLMEB_LOCAL_FILES_ONLY=1
+make check-problem-encoders GPU=0
+make smoke-encoder ENCODER=videomaev2-base GPU=0
+make smoke-encoder ENCODER=internvit-300m GPU=0
+make smoke-encoder ENCODER=internvideo2-clip-s GPU=0
+```
+
 ## Storage setup
 
 Put large files under `/mnt/disks/data`:

@@ -49,6 +49,9 @@ def _move_to_device(batch: dict[str, Any], device: torch.device, dtype: torch.dt
 
 
 def _extract_tokens(outputs: Any, feature_key: str) -> torch.Tensor:
+    if torch.is_tensor(outputs):
+        return outputs
+
     if feature_key != "auto":
         if hasattr(outputs, feature_key):
             value = getattr(outputs, feature_key)
@@ -380,13 +383,6 @@ def _needs_standard_loading(exc: AttributeError) -> bool:
 
 
 def _patch_transformers_tied_weights_compat() -> None:
-    try:
-        from transformers.modeling_utils import PreTrainedModel
-    except Exception:
-        return
-    if hasattr(PreTrainedModel, "all_tied_weights_keys"):
-        return
-
     def all_tied_weights_keys(self) -> dict[str, str]:
         keys: dict[str, str] = {}
         for source in [type(self), self]:
@@ -400,7 +396,17 @@ def _patch_transformers_tied_weights_compat() -> None:
                     keys.update({str(key): str(key) for key in raw_keys})
         return keys
 
-    PreTrainedModel.all_tied_weights_keys = property(all_tied_weights_keys)
+    try:
+        torch.nn.Module.all_tied_weights_keys = property(all_tied_weights_keys)
+    except Exception:
+        pass
+
+    try:
+        from transformers.modeling_utils import PreTrainedModel
+
+        PreTrainedModel.all_tied_weights_keys = property(all_tied_weights_keys)
+    except Exception:
+        return
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -502,11 +508,12 @@ class FrozenEncoder:
         try:
             return AutoModel.from_pretrained(self.pretrained_source, **call_kwargs)
         except AttributeError as exc:
-            if call_kwargs.get("low_cpu_mem_usage") and _needs_standard_loading(exc):
+            if _needs_standard_loading(exc):
                 print(
-                    f"Warning: {cfg.name} is incompatible with low_cpu_mem_usage=True; "
+                    f"Warning: {cfg.name} hit a Transformers tied-weight compatibility issue; "
                     "retrying with low_cpu_mem_usage=False."
                 )
+                _patch_transformers_tied_weights_compat()
                 call_kwargs["low_cpu_mem_usage"] = False
                 return AutoModel.from_pretrained(self.pretrained_source, **call_kwargs)
             raise
@@ -519,6 +526,7 @@ class FrozenEncoder:
                     trust_remote_code=cfg.trust_remote_code,
                     local_files_only=_env_flag("VLMEB_LOCAL_FILES_ONLY"),
                 )
+            _patch_transformers_tied_weights_compat()
             model = AutoModel.from_pretrained(self.pretrained_source, **retry_kwargs)
             return model.to(dtype=self.dtype)
 
@@ -558,8 +566,18 @@ class FrozenEncoder:
                 batch["pixel_values"] = values.permute(0, 2, 1, 3, 4).contiguous()
 
         batch = _move_to_device(batch, self.device, self.dtype)
-        outputs = self.model(**batch)
-        tokens = _extract_tokens(outputs, self.cfg.feature_key)
+        if self.cfg.feature_key in {"extract_features", "forward_features"} and hasattr(self.model, self.cfg.feature_key):
+            feature_method = getattr(self.model, self.cfg.feature_key)
+            try:
+                outputs = feature_method(**batch)
+            except TypeError:
+                if "pixel_values" not in batch:
+                    raise
+                outputs = feature_method(batch["pixel_values"])
+            tokens = _extract_tokens(outputs, "auto")
+        else:
+            outputs = self.model(**batch)
+            tokens = _extract_tokens(outputs, self.cfg.feature_key)
         tokens = _ensure_token_tensor(tokens)
         tokens = adaptive_token_pool(tokens, self.cfg.max_tokens)
         return tokens.squeeze(0).float().cpu()

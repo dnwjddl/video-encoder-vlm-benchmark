@@ -3,9 +3,11 @@ HF_HOME ?= /mnt/disks/data/hf_cache
 LLM_ID ?= Qwen/Qwen2.5-7B-Instruct
 PILOT_MCQ ?= data/benchmarks/hf_video_debug_mcq.jsonl
 TRAIN5K_MANIFEST ?= data/manifests/train_5k_msrvtt.jsonl
+ENCODER ?= internvit-300m
+GPU ?= 0
 export HF_HOME
 
-.PHONY: install storage doctor doctor-model check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel perturb-mcq pilot-mcq train-pilot train-5k extract train eval
+.PHONY: install storage doctor doctor-model check-encoder smoke-encoder check-problem-encoders check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel perturb-mcq pilot-mcq train-pilot train-5k extract train eval
 
 install:
 	pip install -e .
@@ -19,6 +21,17 @@ doctor:
 
 doctor-model:
 	python scripts/check_runtime.py --load-model
+
+check-encoder:
+	CUDA_VISIBLE_DEVICES=$(GPU) python scripts/check_encoder_runtime.py --encoder $(ENCODER)
+
+smoke-encoder:
+	CUDA_VISIBLE_DEVICES=$(GPU) python scripts/check_encoder_runtime.py --encoder $(ENCODER) --forward
+
+check-problem-encoders:
+	$(MAKE) check-encoder ENCODER=internvit-300m GPU=$(GPU)
+	$(MAKE) check-encoder ENCODER=videomaev2-base GPU=$(GPU)
+	$(MAKE) check-encoder ENCODER=internvideo2-clip-s GPU=$(GPU)
 
 check-flash-attn:
 	python scripts/check_runtime.py \
