@@ -5,9 +5,11 @@ PILOT_MCQ ?= data/benchmarks/hf_video_debug_mcq.jsonl
 TRAIN5K_MANIFEST ?= data/manifests/train_5k_msrvtt.jsonl
 ENCODER ?= internvit-300m
 GPU ?= 0
+DIAGNOSTICS_TABLE ?= outputs/no_train_diagnostics_table.csv
+DIAGNOSTICS_FIGURE ?= outputs/figures/no_train_diagnostics_overview
 export HF_HOME
 
-.PHONY: install storage doctor doctor-model check-encoder smoke-encoder check-problem-encoders check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel perturb-mcq pilot-mcq train-pilot train-5k extract train eval
+.PHONY: install storage doctor doctor-model check-encoder smoke-encoder check-problem-encoders check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel figure-diagnostics perturb-mcq pilot-mcq train-pilot train-5k extract train eval
 
 install:
 	pip install -e .
@@ -116,6 +118,14 @@ diagnose-parallel:
 		data/manifests/hf_video_debug.jsonl \
 		outputs/no_train_diagnostics \
 		runs/no_train_diagnostics
+
+figure-diagnostics:
+	test -s $(DIAGNOSTICS_TABLE) || python scripts/aggregate_diagnostics.py \
+		--diagnostics-root outputs/no_train_diagnostics \
+		--out $(DIAGNOSTICS_TABLE)
+	python scripts/plot_no_train_diagnostics.py \
+		--input $(DIAGNOSTICS_TABLE) \
+		--out-prefix $(DIAGNOSTICS_FIGURE)
 
 perturb-mcq:
 	test -s data/manifests/hf_video_debug.jsonl || $(MAKE) hf-video-debug

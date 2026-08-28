@@ -453,6 +453,18 @@ Completed encoder outputs are skipped automatically. To rerun from scratch, use:
 FORCE=1 GPUS=0,1,2,3 make diagnose-parallel
 ```
 
+Plot the training-free diagnostics:
+
+```bash
+make figure-diagnostics
+ls -lh outputs/figures/no_train_diagnostics_overview.*
+```
+
+This writes a PNG, a PDF, and a small ranked CSV. The overview figure includes
+temporal perturbation sensitivity, segment-level structure, token
+compression/diversity, KNN sanity checks, and a raw-value annotated heatmap for
+all available metrics.
+
 If one encoder is blocked by a missing dependency, run the rest first:
 
 ```bash
