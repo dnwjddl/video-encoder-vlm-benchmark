@@ -140,6 +140,30 @@ python scripts/download_data.py \
 
 The unified schema is documented in [docs/MANIFEST_SCHEMA.md](docs/MANIFEST_SCHEMA.md).
 
+### 5K video training manifest
+
+For the next step after the 358-row smoke test, build a 5K caption-alignment
+manifest from `VLM2Vec/MSR-VTT`. This downloads real MP4 files from the dataset
+repo and writes everything under `/mnt/disks/data` through the `data` symlink.
+
+```bash
+source /mnt/disks/data/vlm_encoder_benchmark/env.storage
+make train-manifest-5k
+wc -l data/manifests/train_5k_msrvtt.jsonl
+```
+
+Then train the same projector setup on this 5K manifest:
+
+```bash
+VLMEB_LOCAL_FILES_ONLY=1 \
+GPUS=1,2,3 \
+ENCODERS=siglip2-so400m,dinov2-vitl14,vjepa2-vith-256 \
+MAX_TOKENS=64 \
+MAX_LENGTH=1024 \
+GRAD_ACCUM=8 \
+make train-5k
+```
+
 ### If you need actual video files for no-training diagnostics
 
 The instruction datasets above often provide annotations and relative video ids, not the raw MP4 files. If your manifest paths look like `/data/videos/...` but `os.path.exists(...)` returns `False`, use a small directly downloadable video subset first.

@@ -35,5 +35,7 @@ Optional fields:
 - `benchmark`: benchmark name used for grouped accuracy.
 - `source`: original dataset/source name.
 - `task`: `caption`, `qa`, or `mcq`.
+- `caption`: raw caption text when the row came from a caption dataset.
+- `label`: raw class/category label when available.
 
 Keep train and eval manifests separate. If a benchmark appears inside a training mix, remove that source split from the training manifest.

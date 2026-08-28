@@ -2,9 +2,10 @@ STORAGE_ROOT ?= /mnt/disks/data/vlm_encoder_benchmark
 HF_HOME ?= /mnt/disks/data/hf_cache
 LLM_ID ?= Qwen/Qwen2.5-7B-Instruct
 PILOT_MCQ ?= data/benchmarks/hf_video_debug_mcq.jsonl
+TRAIN5K_MANIFEST ?= data/manifests/train_5k_msrvtt.jsonl
 export HF_HOME
 
-.PHONY: install storage doctor doctor-model check-llm download-llm data activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel perturb-mcq pilot-mcq train-pilot extract train eval
+.PHONY: install storage doctor doctor-model check-llm download-llm data train-manifest-5k activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel perturb-mcq pilot-mcq train-pilot train-5k extract train eval
 
 install:
 	pip install -e .
@@ -33,6 +34,22 @@ data:
 		--qa-count 100000 \
 		--mcq-count 30000 \
 		--video-root $(STORAGE_ROOT)/videos
+
+train-manifest-5k:
+	python scripts/download_hf_video_dataset.py \
+		--dataset-id VLM2Vec/MSR-VTT \
+		--config-name train_7k \
+		--split train \
+		--source-mode path-column \
+		--video-path-column video \
+		--path-prefix raw_videos \
+		--id-column id \
+		--label-column category \
+		--caption-column caption \
+		--video-dir $(STORAGE_ROOT)/videos/msrvtt_train_5k \
+		--out $(TRAIN5K_MANIFEST) \
+		--max-samples 5000 \
+		--validate
 
 activitynet-debug:
 	python scripts/download_activitynet_subset.py \
@@ -103,6 +120,13 @@ train-pilot: pilot-mcq
 		features/pilot_train \
 		checkpoints/pilot_projectors \
 		runs/pilot_train
+
+train-5k: train-manifest-5k
+	bash scripts/run_parallel_pilot_train.sh \
+		$(TRAIN5K_MANIFEST) \
+		features/train_5k \
+		checkpoints/projectors_5k \
+		runs/train_5k
 
 train:
 	bash scripts/run_all_train.sh data/manifests/train_230k.jsonl features/train_230k checkpoints/projectors

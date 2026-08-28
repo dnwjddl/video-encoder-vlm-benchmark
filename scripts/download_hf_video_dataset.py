@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument("--dataset-id", default="VLM2Vec/mvbench-FunQA_test")
+    parser.add_argument("--config-name", default=None, help="Optional Hugging Face dataset config/subset name.")
     parser.add_argument("--split", default="test")
     parser.add_argument(
         "--source-mode",
@@ -34,11 +35,27 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--video-column", default="video")
     parser.add_argument("--video-path-column", default="video_path")
+    parser.add_argument(
+        "--path-prefix",
+        default="",
+        help="Optional repo path prefix prepended to path-column filenames, e.g. raw_videos.",
+    )
     parser.add_argument("--label-column", default="label")
     parser.add_argument("--id-column", default=None)
     parser.add_argument("--question-column", default="question")
     parser.add_argument("--choices-column", default="candidates")
     parser.add_argument("--answer-column", default="answer")
+    parser.add_argument(
+        "--caption-column",
+        default=None,
+        help="Optional caption column used as answer when --answer-column is missing or empty.",
+    )
+    parser.add_argument(
+        "--caption-index",
+        type=int,
+        default=0,
+        help="Caption index to use when --caption-column contains a list.",
+    )
     parser.add_argument(
         "--video-dir",
         default="/mnt/disks/data/vlm_encoder_benchmark/videos/hf_video_debug",
@@ -89,6 +106,17 @@ def label_to_text(dataset: Any, column: str | None, value: Any) -> str | None:
             return str(feature.int2str(int(value)))
         except Exception:
             pass
+    return str(value)
+
+
+def value_to_text(value: Any, *, list_index: int = 0) -> str | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return None
+        index = max(min(list_index, len(value) - 1), -len(value))
+        return str(value[index])
     return str(value)
 
 
@@ -236,6 +264,8 @@ def materialize_path_column(row: dict[str, Any], args: argparse.Namespace, video
     if not video_path:
         raise KeyError(f"Column '{args.video_path_column}' not found. Available columns: {sorted(row)}")
     video_path = str(video_path)
+    if args.path_prefix and not video_path.startswith(f"{args.path_prefix.rstrip('/')}/"):
+        video_path = f"{args.path_prefix.rstrip('/')}/{video_path}"
     downloaded = hf_hub_download(
         repo_id=args.dataset_id,
         repo_type="dataset",
@@ -277,10 +307,13 @@ def manifest_record(
     question = optional_value(row, args.question_column)
     choices = optional_value(row, args.choices_column)
     answer = optional_value(row, args.answer_column)
+    caption = value_to_text(optional_value(row, args.caption_column), list_index=args.caption_index)
 
     if choices is not None:
         choices = [str(choice) for choice in choices]
-    task = "mcq" if choices and answer not in (None, "") else "diagnostic"
+    if answer in (None, "") and caption:
+        answer = caption
+    task = "mcq" if choices and answer not in (None, "") else "caption" if answer not in (None, "") else "diagnostic"
 
     return {
         "id": f"{safe_id(args.dataset_id)}_{safe_id(row_id)}",
@@ -292,6 +325,7 @@ def manifest_record(
         "question": str(question or "Describe the video."),
         "answer": str(answer or ""),
         "choices": choices,
+        "caption": caption,
         "label": label,
         "video_id": row_id,
         "row_index": row_idx,
@@ -304,11 +338,14 @@ def main() -> None:
     video_dir = Path(args.video_dir)
     video_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset = load_dataset(
-        args.dataset_id,
-        split=args.split,
-        streaming=not args.no_streaming,
-    )
+    dataset_kwargs = {
+        "split": args.split,
+        "streaming": not args.no_streaming,
+    }
+    if args.config_name:
+        dataset = load_dataset(args.dataset_id, args.config_name, **dataset_kwargs)
+    else:
+        dataset = load_dataset(args.dataset_id, **dataset_kwargs)
     if args.source_mode == "video-column":
         dataset = disable_video_decoding(dataset, args.video_column)
     dataset = maybe_shuffle(dataset, args)
