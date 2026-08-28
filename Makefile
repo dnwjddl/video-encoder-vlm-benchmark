@@ -21,7 +21,11 @@ doctor-model:
 	python scripts/check_runtime.py --load-model
 
 check-flash-attn:
-	python scripts/check_runtime.py --model-id OpenGVLab/InternVideo2_CLIP_S --load-model
+	python scripts/check_runtime.py \
+		--model-id OpenGVLab/InternVideo2_CLIP_S \
+		--load-model \
+		--allow-missing-processor \
+		--required-module open_clip
 
 check-llm:
 	python scripts/check_hf_model_cache.py --model-id $(LLM_ID) --trust-remote-code
