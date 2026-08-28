@@ -392,6 +392,9 @@ make diagnose-parallel
 
 Run a small projector pilot on representative encoders:
 
+`make train-pilot` rebuilds `data/benchmarks/hf_video_debug_mcq.jsonl` from
+`data/manifests/hf_video_debug.jsonl`, so stale ActivityNet MCQ files are not reused.
+
 ```bash
 GPUS=1,2,3 \
 ENCODERS=clip-vit-l-14-336,siglip2-so400m,vjepa2-vith-256 \
