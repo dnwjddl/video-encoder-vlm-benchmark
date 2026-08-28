@@ -139,7 +139,7 @@ def main() -> None:
         progress = tqdm(dataloader, disable=not accelerator.is_local_main_process, desc=f"epoch {epoch + 1}")
         for batch in progress:
             with accelerator.accumulate(projector):
-                features = batch["features"].to(accelerator.device, dtype=dtype)
+                features = batch["features"].to(accelerator.device, dtype=torch.float32)
                 feature_mask = batch["feature_mask"].to(accelerator.device)
                 visual_embeds = projector(features)
                 inputs_embeds, attention_mask, labels = build_inputs_embeds_and_labels(

@@ -103,6 +103,7 @@ def build_inputs_embeds_and_labels(
         prefix_emb = embed_layer(prefix_ids)
         suffix_emb = embed_layer(suffix_ids)
         answer_emb = embed_layer(answer_ids)
+        vis = vis.to(dtype=prefix_emb.dtype)
         embeds = torch.cat([prefix_emb, vis, suffix_emb, answer_emb], dim=0)
 
         labels = torch.full((embeds.shape[0],), -100, device=device, dtype=torch.long)
