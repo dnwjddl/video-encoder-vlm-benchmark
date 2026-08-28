@@ -57,6 +57,7 @@ def main() -> None:
     index_records = []
     skipped = 0
     skipped_decode = 0
+    media_feature_cache: dict[str, tuple[str, list[int]]] = {}
 
     for record in tqdm(records, desc=f"extract:{args.encoder}"):
         record_id = str(record["id"])
@@ -65,6 +66,9 @@ def main() -> None:
             loaded = torch.load(feature_path, map_location="cpu")
             shape = list(loaded["features"].shape)
             index_records.append({"id": record_id, "feature_path": str(feature_path), "shape": shape})
+            media_path = record.get("media_path")
+            if media_path:
+                media_feature_cache.setdefault(str(Path(media_path)), (str(feature_path), shape))
             continue
 
         media_path = record.get("media_path")
@@ -76,6 +80,13 @@ def main() -> None:
                 f"Missing media for record id={record_id}: {media_path}. "
                 "Set media_path correctly or pass --allow-missing-media."
             )
+
+        cache_key = str(Path(media_path))
+        cached = media_feature_cache.get(cache_key)
+        if cached is not None:
+            cached_feature_path, shape = cached
+            index_records.append({"id": record_id, "feature_path": cached_feature_path, "shape": shape})
+            continue
 
         try:
             frames = load_media_frames(media_path, record.get("media_type", "video"), cfg.num_frames)
@@ -97,11 +108,13 @@ def main() -> None:
             },
             feature_path,
         )
+        shape = list(features.shape)
+        media_feature_cache[cache_key] = (str(feature_path), shape)
         index_records.append(
             {
                 "id": record_id,
                 "feature_path": str(feature_path),
-                "shape": list(features.shape),
+                "shape": shape,
             }
         )
 
@@ -113,6 +126,7 @@ def main() -> None:
             "encoder_config": encoder.metadata(),
             "manifest": str(args.manifest),
             "num_records": len(index_records),
+            "num_unique_media_features": len(media_feature_cache),
             "skipped": skipped,
             "skipped_decode": skipped_decode,
         },

@@ -186,6 +186,47 @@ GRAD_ACCUM=8 \
 make train-5k
 ```
 
+### 20K analysis training manifest
+
+For a cleaner encoder comparison, prefer more data over more epochs. The 20K
+target uses `VLM2Vec/MSR-VTT` `train_9k`, expands up to 3 captions per video,
+and writes a separate manifest/checkpoint/run tree so the 5K smoke run does not
+mix with the analysis run.
+
+```bash
+source /mnt/disks/data/vlm_encoder_benchmark/env.storage
+make train-manifest-20k
+wc -l data/manifests/train_20k_msrvtt.jsonl
+```
+
+Recommended analysis run:
+
+```bash
+VLMEB_LOCAL_FILES_ONLY=1 \
+EPOCHS=1 \
+GPUS=0,1,2,3 \
+ENCODERS=clip-vit-l-14-336,siglip-so400m,siglip2-so400m,dinov2-vitl14 \
+MAX_TOKENS=64 \
+MAX_LENGTH=1024 \
+GRAD_ACCUM=8 \
+ALLOW_MISSING_MEDIA=1 \
+make train-20k
+```
+
+Then run the remaining encoders with the same settings:
+
+```bash
+VLMEB_LOCAL_FILES_ONLY=1 \
+EPOCHS=1 \
+GPUS=0,1,2,3 \
+ENCODERS=internvit-300m,videomaev2-base,vjepa2-vith-256,internvideo2-clip-s \
+MAX_TOKENS=64 \
+MAX_LENGTH=1024 \
+GRAD_ACCUM=8 \
+ALLOW_MISSING_MEDIA=1 \
+make train-20k
+```
+
 ### If you need actual video files for no-training diagnostics
 
 The instruction datasets above often provide annotations and relative video ids, not the raw MP4 files. If your manifest paths look like `/data/videos/...` but `os.path.exists(...)` returns `False`, use a small directly downloadable video subset first.

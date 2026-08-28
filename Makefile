@@ -3,13 +3,14 @@ HF_HOME ?= /mnt/disks/data/hf_cache
 LLM_ID ?= Qwen/Qwen2.5-7B-Instruct
 PILOT_MCQ ?= data/benchmarks/hf_video_debug_mcq.jsonl
 TRAIN5K_MANIFEST ?= data/manifests/train_5k_msrvtt.jsonl
+TRAIN20K_MANIFEST ?= data/manifests/train_20k_msrvtt.jsonl
 ENCODER ?= internvit-300m
 GPU ?= 0
 DIAGNOSTICS_TABLE ?= outputs/no_train_diagnostics_table.csv
 DIAGNOSTICS_FIGURE ?= outputs/figures/no_train_diagnostics_overview
 export HF_HOME
 
-.PHONY: install storage doctor doctor-model check-encoder smoke-encoder check-problem-encoders check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel figure-diagnostics perturb-mcq pilot-mcq train-pilot train-5k extract train eval
+.PHONY: install storage doctor doctor-model check-encoder smoke-encoder check-problem-encoders check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k train-manifest-20k activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel figure-diagnostics perturb-mcq pilot-mcq train-pilot train-5k train-20k extract train eval
 
 install:
 	pip install -e .
@@ -74,6 +75,23 @@ train-manifest-5k:
 		--video-dir $(STORAGE_ROOT)/videos/msrvtt_train_5k \
 		--out $(TRAIN5K_MANIFEST) \
 		--max-samples 5000 \
+		--validate
+
+train-manifest-20k:
+	python scripts/download_hf_video_dataset.py \
+		--dataset-id VLM2Vec/MSR-VTT \
+		--config-name train_9k \
+		--split train \
+		--source-mode path-column \
+		--video-path-column video \
+		--path-prefix raw_videos \
+		--id-column id \
+		--label-column category \
+		--caption-column caption \
+		--caption-expand-count 3 \
+		--video-dir $(STORAGE_ROOT)/videos/msrvtt_train_20k \
+		--out $(TRAIN20K_MANIFEST) \
+		--max-samples 20000 \
 		--validate
 
 activitynet-debug:
@@ -160,6 +178,13 @@ train-5k: train-manifest-5k
 		features/train_5k \
 		checkpoints/projectors_5k \
 		runs/train_5k
+
+train-20k: train-manifest-20k
+	bash scripts/run_parallel_pilot_train.sh \
+		$(TRAIN20K_MANIFEST) \
+		features/train_20k \
+		checkpoints/projectors_20k \
+		runs/train_20k
 
 train:
 	bash scripts/run_all_train.sh data/manifests/train_230k.jsonl features/train_230k checkpoints/projectors

@@ -57,6 +57,15 @@ def parse_args() -> argparse.Namespace:
         help="Caption index to use when --caption-column contains a list.",
     )
     parser.add_argument(
+        "--caption-expand-count",
+        type=int,
+        default=1,
+        help=(
+            "When --caption-column contains a list, emit up to this many caption "
+            "examples per video row. --max-samples still limits output rows."
+        ),
+    )
+    parser.add_argument(
         "--video-dir",
         default="/mnt/disks/data/vlm_encoder_benchmark/videos/hf_video_debug",
     )
@@ -118,6 +127,22 @@ def value_to_text(value: Any, *, list_index: int = 0) -> str | None:
         index = max(min(list_index, len(value) - 1), -len(value))
         return str(value[index])
     return str(value)
+
+
+def caption_variants(row: dict[str, Any], args: argparse.Namespace) -> list[tuple[int | None, str | None]]:
+    value = optional_value(row, args.caption_column)
+    if value in (None, ""):
+        return [(None, None)]
+    if not isinstance(value, (list, tuple)):
+        return [(None, str(value))]
+    if not value:
+        return [(None, None)]
+    if args.caption_expand_count <= 1:
+        index = max(min(args.caption_index, len(value) - 1), -len(value))
+        return [(None, str(value[index]))]
+
+    count = min(args.caption_expand_count, len(value))
+    return [(idx, str(value[idx])) for idx in range(count)]
 
 
 def disable_video_decoding(dataset: Any, video_column: str) -> Any:
@@ -302,21 +327,23 @@ def manifest_record(
     row_id: str,
     media_path: Path,
     original_video_path: str | None,
+    caption: str | None = None,
+    caption_variant_index: int | None = None,
 ) -> dict[str, Any]:
     label = label_to_text(dataset, args.label_column, optional_value(row, args.label_column))
     question = optional_value(row, args.question_column)
     choices = optional_value(row, args.choices_column)
     answer = optional_value(row, args.answer_column)
-    caption = value_to_text(optional_value(row, args.caption_column), list_index=args.caption_index)
 
     if choices is not None:
         choices = [str(choice) for choice in choices]
     if answer in (None, "") and caption:
         answer = caption
     task = "mcq" if choices and answer not in (None, "") else "caption" if answer not in (None, "") else "diagnostic"
+    caption_suffix = f"_cap{caption_variant_index:02d}" if caption_variant_index is not None else ""
 
     return {
-        "id": f"{safe_id(args.dataset_id)}_{safe_id(row_id)}",
+        "id": f"{safe_id(args.dataset_id)}_{safe_id(row_id)}{caption_suffix}",
         "source": args.dataset_id,
         "benchmark": f"{safe_id(args.dataset_id)}_diagnostic",
         "task": task,
@@ -329,6 +356,7 @@ def manifest_record(
         "label": label,
         "video_id": row_id,
         "row_index": row_idx,
+        "caption_index": caption_variant_index,
         "original_video_path": original_video_path,
     }
 
@@ -379,18 +407,25 @@ def main() -> None:
                 pbar.update(1)
                 continue
 
-        manifest.append(
-            manifest_record(
-                row=row,
-                args=args,
-                dataset=dataset,
-                row_idx=row_idx,
-                row_id=row_id,
-                media_path=media_path,
-                original_video_path=original_video_path,
+        added = 0
+        for caption_variant_index, caption in caption_variants(row, args):
+            if args.max_samples and len(manifest) >= args.max_samples:
+                break
+            manifest.append(
+                manifest_record(
+                    row=row,
+                    args=args,
+                    dataset=dataset,
+                    row_idx=row_idx,
+                    row_id=row_id,
+                    media_path=media_path,
+                    original_video_path=original_video_path,
+                    caption=caption,
+                    caption_variant_index=caption_variant_index,
+                )
             )
-        )
-        pbar.update(1)
+            added += 1
+        pbar.update(max(added, 1))
 
     pbar.close()
     write_jsonl(args.out, manifest)
