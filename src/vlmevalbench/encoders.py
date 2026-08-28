@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from collections.abc import Mapping
 from dataclasses import asdict
 import importlib.machinery
 import os
@@ -158,11 +159,42 @@ def _temporary_flash_attn_stub():
 
 
 def _disable_flash_attn_in_config(config: Any) -> None:
-    if hasattr(config, "use_flash_attn"):
-        config.use_flash_attn = False
-    vision_config = getattr(config, "vision_config", None)
-    if vision_config is not None and hasattr(vision_config, "use_flash_attn"):
-        vision_config.use_flash_attn = False
+    disabled_keys = {
+        "use_flash_attn",
+        "use_flash_attention",
+        "use_flash_sdp",
+        "use_mem_efficient_sdp",
+        "use_fused_mlp",
+        "use_fused_rmsnorm",
+    }
+    seen: set[int] = set()
+
+    def visit(value: Any) -> None:
+        value_id = id(value)
+        if value_id in seen:
+            return
+        seen.add(value_id)
+
+        if isinstance(value, Mapping):
+            for key in disabled_keys:
+                if key in value:
+                    value[key] = False
+            for child in value.values():
+                visit(child)
+            return
+
+        for key in disabled_keys:
+            if hasattr(value, key):
+                try:
+                    setattr(value, key, False)
+                except Exception:
+                    pass
+
+        if hasattr(value, "__dict__"):
+            for child in vars(value).values():
+                visit(child)
+
+    visit(config)
 
 
 def _needs_standard_loading(exc: AttributeError) -> bool:

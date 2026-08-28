@@ -78,6 +78,7 @@ internvideo2-clip-s:
   trust_remote_code: true
   processor: model_transform
   feature_key: auto
+  disable_flash_attn: true
   low_cpu_mem_usage: false
   num_frames: 8
   max_tokens: 256

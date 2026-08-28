@@ -9,8 +9,9 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Check runtime wiring for cached Hugging Face model loading.")
-    parser.add_argument("--model-id", default="OpenGVLab/InternVideo2-CLIP-1B-224p-f8")
+    parser.add_argument("--model-id", default="OpenGVLab/InternVideo2_CLIP_S")
     parser.add_argument("--repo-type", default="model")
+    parser.add_argument("--load-model", action="store_true", help="Also instantiate AutoModel. This can use GPU/CPU memory.")
     return parser.parse_args()
 
 
@@ -41,10 +42,13 @@ def list_snapshot_files(snapshot_path: str) -> None:
 
 
 def check_transformers_loaders(source: str, label: str) -> None:
-    from transformers import AutoConfig, AutoImageProcessor, AutoProcessor
+    from transformers import AutoConfig, AutoImageProcessor, AutoModel, AutoProcessor
+    from vlmevalbench.encoders import _disable_flash_attn_in_config
 
+    config = None
     try:
-        AutoConfig.from_pretrained(source, trust_remote_code=True, local_files_only=True)
+        config = AutoConfig.from_pretrained(source, trust_remote_code=True, local_files_only=True)
+        _disable_flash_attn_in_config(config)
         print_status(f"AutoConfig local-only ({label})", True)
     except Exception as exc:
         print_status(f"AutoConfig local-only ({label})", False, short_error(exc))
@@ -59,6 +63,8 @@ def check_transformers_loaders(source: str, label: str) -> None:
             print_status(f"AutoImageProcessor local-only ({label})", True)
         except Exception as image_exc:
             print_status(f"AutoImageProcessor local-only ({label})", False, short_error(image_exc))
+
+    return config, AutoModel
 
 
 def main() -> None:
@@ -100,7 +106,23 @@ def main() -> None:
         return
 
     check_transformers_loaders(args.model_id, "repo-id")
-    check_transformers_loaders(snapshot_path, "snapshot-path")
+    config, auto_model = check_transformers_loaders(snapshot_path, "snapshot-path")
+
+    if args.load_model and config is not None:
+        from vlmevalbench.encoders import _temporary_flash_attn_stub
+
+        try:
+            with _temporary_flash_attn_stub():
+                model = auto_model.from_pretrained(
+                    snapshot_path,
+                    trust_remote_code=True,
+                    local_files_only=True,
+                    low_cpu_mem_usage=False,
+                    config=config,
+                )
+            print_status("AutoModel local-only (snapshot-path)", True, type(model).__name__)
+        except Exception as exc:
+            print_status("AutoModel local-only (snapshot-path)", False, short_error(exc))
 
 
 if __name__ == "__main__":

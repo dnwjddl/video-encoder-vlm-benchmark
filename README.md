@@ -36,10 +36,10 @@ Note: `internvideo2-clip-s` is the AutoModel-compatible InternVideo2-CLIP
 checkpoint used by this harness. `internvideo2-clip-1b` is a gated add-on
 checkpoint containing `1B_clip.pth` but no Transformers `config.json`, so it
 requires the official OpenGVLab InternVideo code path and additional checkpoints.
-`internvit-300m` is configured with `disable_flash_attn: true` so it can run on
-older Linux systems where the prebuilt `flash-attn` wheel fails with a
-`GLIBC_2.32 not found` error. It uses the same weights with the model's naive
-PyTorch attention path.
+`internvit-300m` and `internvideo2-clip-s` are configured with
+`disable_flash_attn: true` so they can run on systems where `flash-attn` is not
+installed or the prebuilt wheel fails with a `GLIBC_2.32 not found` error. They
+use the same weights with non-flash attention paths.
 
 ## Recommended experiment size
 
