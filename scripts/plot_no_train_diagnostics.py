@@ -92,6 +92,16 @@ PALETTE = [
 ]
 
 
+def save_figure(fig: plt.Figure, out_prefix: Path) -> None:
+    png_path = out_prefix.with_suffix(".png")
+    pdf_path = out_prefix.with_suffix(".pdf")
+    fig.savefig(png_path, dpi=220, bbox_inches="tight")
+    fig.savefig(pdf_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Wrote {png_path}")
+    print(f"Wrote {pdf_path}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot no-training encoder diagnostic metrics.")
     parser.add_argument("--input", default="outputs/no_train_diagnostics_table.csv")
@@ -255,6 +265,136 @@ def add_heatmap(ax: plt.Axes, df: pd.DataFrame, metrics: list[str]) -> None:
     cbar.ax.tick_params(labelsize=8)
 
 
+def metric_values_for_plot(df: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
+    return df[[metric for metric in metrics if metric in df.columns]].copy()
+
+
+def add_horizontal_grouped_bars(
+    ax: plt.Axes,
+    df: pd.DataFrame,
+    metrics: list[str],
+    *,
+    title: str,
+    xlabel: str,
+    normalize_values: bool = False,
+    invert: set[str] | None = None,
+    color_offset: int = 0,
+    xlim: tuple[float, float] | None = None,
+) -> None:
+    metrics = [metric for metric in metrics if metric in df.columns]
+    if not metrics:
+        ax.axis("off")
+        return
+
+    values = metric_values_for_plot(df, metrics)
+    if normalize_values:
+        values = normalized(values, invert=invert)
+
+    y = np.arange(len(df))
+    height = min(0.75 / max(len(metrics), 1), 0.18)
+    for idx, metric in enumerate(metrics):
+        offset = (idx - (len(metrics) - 1) / 2) * height
+        ax.barh(
+            y + offset,
+            values[metric].fillna(0.0).to_numpy(dtype=float),
+            height=height,
+            label=metric_label(metric),
+            color=PALETTE[(idx + color_offset) % len(PALETTE)],
+            linewidth=0,
+        )
+
+    ax.set_title(title, loc="left", fontsize=13, fontweight="bold")
+    ax.set_xlabel(xlabel)
+    ax.set_yticks(y)
+    ax.set_yticklabels([display_name(str(x)) for x in df["encoder"]])
+    ax.invert_yaxis()
+    ax.grid(axis="x", alpha=0.25, linewidth=0.8)
+    ax.legend(fontsize=9, frameon=False, loc="lower center", bbox_to_anchor=(0.5, -0.22), ncol=min(len(metrics), 5))
+
+    if xlim is not None:
+        ax.set_xlim(*xlim)
+    elif normalize_values:
+        ax.set_xlim(0, 1.05)
+    else:
+        finite = values.to_numpy(dtype=float)
+        finite = finite[np.isfinite(finite)]
+        if finite.size:
+            xmin = min(float(finite.min()), 0.0)
+            xmax = max(float(finite.max()), 0.0)
+            pad = max((xmax - xmin) * 0.08, 1e-6)
+            ax.set_xlim(xmin - pad, xmax + pad)
+
+
+def plot_temporal_sensitivity(df: pd.DataFrame, out_prefix: Path) -> None:
+    fig, ax = plt.subplots(figsize=(12, max(5, len(df) * 0.55)), constrained_layout=True)
+    add_horizontal_grouped_bars(
+        ax,
+        df,
+        TEMPORAL_METRICS,
+        title="Training-free Temporal Perturbation Sensitivity",
+        xlabel="cosine distance from original",
+    )
+    save_figure(fig, out_prefix)
+
+
+def plot_segment_structure(df: pd.DataFrame, out_prefix: Path) -> None:
+    fig, ax = plt.subplots(figsize=(12, max(5, len(df) * 0.55)), constrained_layout=True)
+    add_horizontal_grouped_bars(
+        ax,
+        df,
+        SEGMENT_METRICS,
+        title="Training-free Segment-level Video Structure",
+        xlabel="cosine distance / correlation",
+        color_offset=1,
+    )
+    save_figure(fig, out_prefix)
+
+
+def plot_token_diversity(df: pd.DataFrame, out_prefix: Path) -> None:
+    fig, ax = plt.subplots(figsize=(12, max(5, len(df) * 0.55)), constrained_layout=True)
+    add_horizontal_grouped_bars(
+        ax,
+        df,
+        TOKEN_METRICS,
+        title="Training-free Token Compression / Diversity",
+        xlabel="min-max normalized score",
+        normalize_values=True,
+        invert={"token_top1_energy_ratio"},
+        color_offset=3,
+        xlim=(0, 1.05),
+    )
+    save_figure(fig, out_prefix)
+
+
+def plot_knn_sanity(df: pd.DataFrame, out_prefix: Path) -> None:
+    fig, ax = plt.subplots(figsize=(10, max(5, len(df) * 0.5)), constrained_layout=True)
+    add_horizontal_grouped_bars(
+        ax,
+        df,
+        KNN_METRICS,
+        title="Training-free KNN Sanity Check",
+        xlabel="accuracy",
+        color_offset=5,
+        xlim=(0, 1.05),
+    )
+    save_figure(fig, out_prefix)
+
+
+def plot_metrics_heatmap(df: pd.DataFrame, metrics: list[str], out_prefix: Path) -> None:
+    fig, ax = plt.subplots(figsize=(max(10, len(df) * 1.25), max(7, len(metrics) * 0.38)), constrained_layout=True)
+    add_heatmap(ax, df, metrics)
+    save_figure(fig, out_prefix)
+
+
+def plot_separate_figures(df: pd.DataFrame, metrics: list[str], out_prefix: Path) -> None:
+    plot_temporal_sensitivity(df, out_prefix.with_name(out_prefix.name + "_temporal_sensitivity"))
+    plot_segment_structure(df, out_prefix.with_name(out_prefix.name + "_segment_structure"))
+    plot_token_diversity(df, out_prefix.with_name(out_prefix.name + "_token_diversity"))
+    if any(metric in df.columns for metric in KNN_METRICS):
+        plot_knn_sanity(df, out_prefix.with_name(out_prefix.name + "_knn_sanity"))
+    plot_metrics_heatmap(df, metrics, out_prefix.with_name(out_prefix.name + "_all_metrics_heatmap"))
+
+
 def compute_rank_table(df: pd.DataFrame) -> pd.DataFrame:
     scores = pd.DataFrame({"encoder": df["encoder"]})
 
@@ -333,6 +473,8 @@ def main() -> None:
     pdf_path = out_prefix.with_suffix(".pdf")
     fig.savefig(png_path, dpi=220)
     fig.savefig(pdf_path)
+    plt.close(fig)
+    plot_separate_figures(df, metrics, out_prefix)
     print(f"Wrote {png_path}")
     print(f"Wrote {pdf_path}")
     print(f"Wrote {out_prefix.with_name(out_prefix.name + '_ranked.csv')}")

@@ -521,10 +521,20 @@ make figure-diagnostics
 ls -lh outputs/figures/no_train_diagnostics_overview.*
 ```
 
-This writes a PNG, a PDF, and a small ranked CSV. The overview figure includes
-temporal perturbation sensitivity, segment-level structure, token
-compression/diversity, KNN sanity checks, and a raw-value annotated heatmap for
-all available metrics.
+This writes a combined overview, separate non-overlapping figures, and a small
+ranked CSV:
+
+```text
+outputs/figures/no_train_diagnostics_overview.png
+outputs/figures/no_train_diagnostics_overview_temporal_sensitivity.png
+outputs/figures/no_train_diagnostics_overview_segment_structure.png
+outputs/figures/no_train_diagnostics_overview_token_diversity.png
+outputs/figures/no_train_diagnostics_overview_knn_sanity.png
+outputs/figures/no_train_diagnostics_overview_all_metrics_heatmap.png
+outputs/figures/no_train_diagnostics_overview_ranked.csv
+```
+
+Each PNG also has a matching PDF.
 
 If one encoder is blocked by a missing dependency, run the rest first:
 
