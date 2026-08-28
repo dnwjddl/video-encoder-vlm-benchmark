@@ -432,6 +432,63 @@ def _frames_to_tchw_uint8(frames: list[Image.Image]) -> torch.Tensor:
     return video.permute(0, 3, 1, 2).contiguous()
 
 
+def _sinusoid_encoding_table(
+    n_position: int,
+    d_hid: int,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    positions = np.arange(n_position, dtype=np.float32)[:, None]
+    dims = np.arange(d_hid, dtype=np.float32)[None, :]
+    angles = positions / np.power(10000, 2 * (dims // 2) / d_hid)
+    table = np.empty((n_position, d_hid), dtype=np.float32)
+    table[:, 0::2] = np.sin(angles[:, 0::2])
+    table[:, 1::2] = np.cos(angles[:, 1::2])
+    return torch.tensor(table, dtype=torch.float32, device=device).unsqueeze(0).to(dtype=dtype)
+
+
+def _repair_videomaev2_meta_pos_embed(
+    model: torch.nn.Module,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    vit = getattr(model, "model", None)
+    pos_embed = getattr(vit, "pos_embed", None)
+    if vit is None or not torch.is_tensor(pos_embed):
+        return
+
+    if not pos_embed.is_meta:
+        if pos_embed.device != device or pos_embed.dtype != dtype:
+            vit.pos_embed = pos_embed.to(device=device, dtype=dtype)
+        return
+
+    patch_embed = getattr(vit, "patch_embed", None)
+    num_patches = getattr(patch_embed, "num_patches", None)
+    embed_dim = getattr(vit, "embed_dim", None)
+    if num_patches is None or embed_dim is None:
+        raise RuntimeError("Cannot rebuild VideoMAEv2 meta pos_embed without num_patches and embed_dim.")
+
+    vit.pos_embed = _sinusoid_encoding_table(
+        int(num_patches),
+        int(embed_dim),
+        device=device,
+        dtype=dtype,
+    )
+
+
+def _repair_known_remote_model_artifacts(
+    model: torch.nn.Module,
+    cfg: EncoderConfig,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> None:
+    if cfg.name.startswith("videomaev2"):
+        _repair_videomaev2_meta_pos_embed(model, device=device, dtype=dtype)
+
+
 class FrozenEncoder:
     def __init__(
         self,
@@ -489,10 +546,16 @@ class FrozenEncoder:
             _disable_flash_attn_in_config(config)
             with _temporary_flash_attn_stub():
                 model = self._auto_model_from_pretrained(cfg, kwargs, config=config)
-            return model.to(self.device)
+            _repair_known_remote_model_artifacts(model, cfg, device=torch.device("cpu"), dtype=self.dtype)
+            model = model.to(self.device)
+            _repair_known_remote_model_artifacts(model, cfg, device=self.device, dtype=self.dtype)
+            return model
 
         model = self._auto_model_from_pretrained(cfg, kwargs)
-        return model.to(self.device)
+        _repair_known_remote_model_artifacts(model, cfg, device=torch.device("cpu"), dtype=self.dtype)
+        model = model.to(self.device)
+        _repair_known_remote_model_artifacts(model, cfg, device=self.device, dtype=self.dtype)
+        return model
 
     def _auto_model_from_pretrained(
         self,
