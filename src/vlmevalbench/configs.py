@@ -18,6 +18,7 @@ class EncoderConfig:
     drop_cls: bool = False
     input_layout: str | None = None
     disable_flash_attn: bool = False
+    low_cpu_mem_usage: bool = True
     num_frames: int = 8
     max_tokens: int = 256
     note: str | None = None

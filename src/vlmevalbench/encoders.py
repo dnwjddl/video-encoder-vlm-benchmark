@@ -162,6 +162,11 @@ def _disable_flash_attn_in_config(config: Any) -> None:
         vision_config.use_flash_attn = False
 
 
+def _needs_standard_loading(exc: AttributeError) -> bool:
+    message = str(exc)
+    return "all_tied_weights_keys" in message or "_tied_weights_keys" in message
+
+
 class FrozenEncoder:
     def __init__(
         self,
@@ -201,27 +206,49 @@ class FrozenEncoder:
         kwargs = {
             "trust_remote_code": cfg.trust_remote_code,
             "torch_dtype": self.dtype,
-            "low_cpu_mem_usage": True,
+            "low_cpu_mem_usage": cfg.low_cpu_mem_usage,
         }
         if cfg.disable_flash_attn:
             config = AutoConfig.from_pretrained(cfg.model_id, trust_remote_code=cfg.trust_remote_code)
             _disable_flash_attn_in_config(config)
             with _temporary_flash_attn_stub():
-                try:
-                    model = AutoModel.from_pretrained(cfg.model_id, config=config, **kwargs)
-                except TypeError:
-                    kwargs.pop("torch_dtype", None)
-                    model = AutoModel.from_pretrained(cfg.model_id, config=config, **kwargs)
-                    model = model.to(dtype=self.dtype)
+                model = self._auto_model_from_pretrained(cfg, kwargs, config=config)
             return model.to(self.device)
 
-        try:
-            model = AutoModel.from_pretrained(cfg.model_id, **kwargs)
-        except TypeError:
-            config = AutoConfig.from_pretrained(cfg.model_id, trust_remote_code=cfg.trust_remote_code)
-            model = AutoModel.from_pretrained(cfg.model_id, config=config, trust_remote_code=cfg.trust_remote_code)
-            model = model.to(dtype=self.dtype)
+        model = self._auto_model_from_pretrained(cfg, kwargs)
         return model.to(self.device)
+
+    def _auto_model_from_pretrained(
+        self,
+        cfg: EncoderConfig,
+        kwargs: dict[str, Any],
+        *,
+        config: Any | None = None,
+    ) -> torch.nn.Module:
+        call_kwargs = dict(kwargs)
+        if config is not None:
+            call_kwargs["config"] = config
+        try:
+            return AutoModel.from_pretrained(cfg.model_id, **call_kwargs)
+        except AttributeError as exc:
+            if call_kwargs.get("low_cpu_mem_usage") and _needs_standard_loading(exc):
+                print(
+                    f"Warning: {cfg.name} is incompatible with low_cpu_mem_usage=True; "
+                    "retrying with low_cpu_mem_usage=False."
+                )
+                call_kwargs["low_cpu_mem_usage"] = False
+                return AutoModel.from_pretrained(cfg.model_id, **call_kwargs)
+            raise
+        except TypeError:
+            retry_kwargs = dict(call_kwargs)
+            retry_kwargs.pop("torch_dtype", None)
+            if "config" not in retry_kwargs:
+                retry_kwargs["config"] = AutoConfig.from_pretrained(
+                    cfg.model_id,
+                    trust_remote_code=cfg.trust_remote_code,
+                )
+            model = AutoModel.from_pretrained(cfg.model_id, **retry_kwargs)
+            return model.to(dtype=self.dtype)
 
     @torch.no_grad()
     def encode_frames(self, frames: list[Image.Image]) -> torch.Tensor:

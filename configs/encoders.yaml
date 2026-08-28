@@ -59,6 +59,7 @@ videomaev2-base:
   processor: videomae
   feature_key: last_hidden_state
   input_layout: bcthw
+  low_cpu_mem_usage: false
   num_frames: 16
   max_tokens: 256
 
