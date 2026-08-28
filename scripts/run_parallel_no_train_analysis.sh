@@ -8,7 +8,7 @@ MANIFEST="${1:-data/manifests/hf_video_debug.jsonl}"
 OUT_ROOT="${2:-outputs/no_train_diagnostics}"
 RUN_ROOT="${3:-runs/no_train_diagnostics}"
 
-ENCODERS_CSV="${ENCODERS:-clip-vit-l-14-336,siglip-so400m,siglip2-so400m,internvit-300m,dinov2-vitl14,videomaev2-base,vjepa2-vith-256,internvideo2-clip-1b}"
+ENCODERS_CSV="${ENCODERS:-clip-vit-l-14-336,siglip-so400m,siglip2-so400m,internvit-300m,dinov2-vitl14,videomaev2-base,vjepa2-vith-256,internvideo2-clip-s}"
 GPUS_CSV="${GPUS:-0,1,2,3}"
 DTYPE="${DTYPE:-bf16}"
 LIMIT="${LIMIT:-}"

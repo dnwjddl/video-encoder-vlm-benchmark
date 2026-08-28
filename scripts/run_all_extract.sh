@@ -15,7 +15,7 @@ ENCODERS=(
   dinov2-vitl14
   videomaev2-base
   vjepa2-vith-256
-  internvideo2-clip-1b
+  internvideo2-clip-s
 )
 
 for ENCODER in "${ENCODERS[@]}"; do

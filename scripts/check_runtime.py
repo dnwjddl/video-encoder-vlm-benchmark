@@ -22,6 +22,45 @@ def print_status(name: str, ok: bool, detail: str = "") -> None:
         print(f"{prefix} {name}")
 
 
+def short_error(exc: Exception) -> str:
+    message = str(exc).replace("\n", " ")
+    if len(message) > 260:
+        message = message[:257] + "..."
+    return f"{type(exc).__name__}: {message}"
+
+
+def list_snapshot_files(snapshot_path: str) -> None:
+    path = Path(snapshot_path)
+    files = sorted(p.name for p in path.iterdir()) if path.exists() else []
+    shown = ", ".join(files[:40])
+    if len(files) > 40:
+        shown += f", ... ({len(files)} total)"
+    print(f"snapshot_files={shown}")
+    for required in ("config.json", "preprocessor_config.json", "processor_config.json", "model.safetensors"):
+        print_status(f"snapshot has {required}", (path / required).exists())
+
+
+def check_transformers_loaders(source: str, label: str) -> None:
+    from transformers import AutoConfig, AutoImageProcessor, AutoProcessor
+
+    try:
+        AutoConfig.from_pretrained(source, trust_remote_code=True, local_files_only=True)
+        print_status(f"AutoConfig local-only ({label})", True)
+    except Exception as exc:
+        print_status(f"AutoConfig local-only ({label})", False, short_error(exc))
+
+    try:
+        AutoProcessor.from_pretrained(source, trust_remote_code=True, local_files_only=True)
+        print_status(f"AutoProcessor local-only ({label})", True)
+    except Exception as exc:
+        print_status(f"AutoProcessor local-only ({label})", False, short_error(exc))
+        try:
+            AutoImageProcessor.from_pretrained(source, trust_remote_code=True, local_files_only=True)
+            print_status(f"AutoImageProcessor local-only ({label})", True)
+        except Exception as image_exc:
+            print_status(f"AutoImageProcessor local-only ({label})", False, short_error(image_exc))
+
+
 def main() -> None:
     args = parse_args()
 
@@ -31,7 +70,6 @@ def main() -> None:
     import torch
     import vlmevalbench.encoders as encoders
     from huggingface_hub import snapshot_download
-    from transformers import AutoConfig, AutoImageProcessor, AutoProcessor
 
     print(f"torch={torch.__version__}")
     print(f"torch_cuda={torch.version.cuda}")
@@ -56,26 +94,13 @@ def main() -> None:
             local_files_only=True,
         )
         print_status("snapshot cache", True, snapshot_path)
+        list_snapshot_files(snapshot_path)
     except Exception as exc:
-        print_status("snapshot cache", False, f"{type(exc).__name__}: {exc}")
+        print_status("snapshot cache", False, short_error(exc))
         return
 
-    try:
-        AutoConfig.from_pretrained(args.model_id, trust_remote_code=True, local_files_only=True)
-        print_status("AutoConfig local-only", True)
-    except Exception as exc:
-        print_status("AutoConfig local-only", False, f"{type(exc).__name__}: {exc}")
-
-    try:
-        AutoProcessor.from_pretrained(args.model_id, trust_remote_code=True, local_files_only=True)
-        print_status("AutoProcessor local-only", True)
-    except Exception as exc:
-        print_status("AutoProcessor local-only", False, f"{type(exc).__name__}: {exc}")
-        try:
-            AutoImageProcessor.from_pretrained(args.model_id, trust_remote_code=True, local_files_only=True)
-            print_status("AutoImageProcessor local-only", True)
-        except Exception as image_exc:
-            print_status("AutoImageProcessor local-only", False, f"{type(image_exc).__name__}: {image_exc}")
+    check_transformers_loaders(args.model_id, "repo-id")
+    check_transformers_loaders(snapshot_path, "snapshot-path")
 
 
 if __name__ == "__main__":

@@ -29,9 +29,13 @@ Video encoder track:
 
 - `videomaev2-base`: `OpenGVLab/VideoMAEv2-Base`
 - `vjepa2-vith-256`: `facebook/vjepa2-vith-fpc64-256`
-- `internvideo2-clip-1b`: `OpenGVLab/InternVideo2-CLIP-1B-224p-f8`
+- `internvideo2-clip-s`: `OpenGVLab/InternVideo2_CLIP_S`
+- `internvideo2-clip-1b`: `OpenGVLab/InternVideo2-CLIP-1B-224p-f8` external/manual path
 
-Note: `internvideo2-clip-1b` is gated on Hugging Face. Accept the model terms before running it on a server.
+Note: `internvideo2-clip-s` is the AutoModel-compatible InternVideo2-CLIP
+checkpoint used by this harness. `internvideo2-clip-1b` is a gated add-on
+checkpoint containing `1B_clip.pth` but no Transformers `config.json`, so it
+requires the official OpenGVLab InternVideo code path and additional checkpoints.
 `internvit-300m` is configured with `disable_flash_attn: true` so it can run on
 older Linux systems where the prebuilt `flash-attn` wheel fails with a
 `GLIBC_2.32 not found` error. It uses the same weights with the model's naive
@@ -73,7 +77,7 @@ all model loaders to use only local files:
 export VLMEB_LOCAL_FILES_ONLY=1
 ```
 
-This is useful for `internvideo2-clip-1b`: without local-only mode,
+This is useful for gated models: without local-only mode,
 Transformers may still make a Hugging Face metadata request and fail with a 401
 if the current shell is not authenticated.
 
@@ -421,7 +425,7 @@ If each job fits in memory, run the pilot over all configured encoders:
 
 ```bash
 GPUS=0,1,2,3 \
-ENCODERS=clip-vit-l-14-336,siglip-so400m,siglip2-so400m,internvit-300m,dinov2-vitl14,videomaev2-base,vjepa2-vith-256,internvideo2-clip-1b \
+ENCODERS=clip-vit-l-14-336,siglip-so400m,siglip2-so400m,internvit-300m,dinov2-vitl14,videomaev2-base,vjepa2-vith-256,internvideo2-clip-s \
 MAX_TOKENS=64 \
 MAX_LENGTH=1024 \
 GRAD_ACCUM=8 \

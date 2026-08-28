@@ -6,7 +6,7 @@ export VLMEB_LOCAL_FILES_ONLY="${VLMEB_LOCAL_FILES_ONLY:-0}"
 
 MANIFEST="${1:-data/manifests/train_debug.jsonl}"
 OUT_ROOT="${2:-outputs/no_train_diagnostics}"
-ENCODERS_CSV="${ENCODERS:-clip-vit-l-14-336,siglip-so400m,siglip2-so400m,internvit-300m,dinov2-vitl14,videomaev2-base,vjepa2-vith-256,internvideo2-clip-1b}"
+ENCODERS_CSV="${ENCODERS:-clip-vit-l-14-336,siglip-so400m,siglip2-so400m,internvit-300m,dinov2-vitl14,videomaev2-base,vjepa2-vith-256,internvideo2-clip-s}"
 DTYPE="${DTYPE:-bf16}"
 LIMIT="${LIMIT:-}"
 STRICT_MEDIA="${STRICT_MEDIA:-0}"

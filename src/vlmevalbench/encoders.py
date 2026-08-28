@@ -4,10 +4,12 @@ from contextlib import contextmanager
 from dataclasses import asdict
 import importlib.machinery
 import os
+from pathlib import Path
 import sys
 import types
 from typing import Any
 
+import numpy as np
 import torch
 from PIL import Image
 from transformers import (
@@ -175,6 +177,22 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _resolve_pretrained_source(model_id: str) -> str:
+    if not _env_flag("VLMEB_LOCAL_FILES_ONLY"):
+        return model_id
+    if Path(model_id).exists():
+        return model_id
+    from huggingface_hub import snapshot_download
+
+    return snapshot_download(repo_id=model_id, repo_type="model", local_files_only=True)
+
+
+def _frames_to_tchw_uint8(frames: list[Image.Image]) -> torch.Tensor:
+    arrays = [np.asarray(frame.convert("RGB"), dtype=np.uint8) for frame in frames]
+    video = torch.from_numpy(np.stack(arrays, axis=0))
+    return video.permute(0, 3, 1, 2).contiguous()
+
+
 class FrozenEncoder:
     def __init__(
         self,
@@ -186,6 +204,7 @@ class FrozenEncoder:
         self.cfg = cfg
         self.device = torch.device(device if torch.cuda.is_available() or device == "cpu" else "cpu")
         self.dtype = dtype
+        self.pretrained_source = _resolve_pretrained_source(cfg.model_id)
 
         self.processor = self._load_processor(cfg)
         self.model = self._load_model(cfg)
@@ -197,21 +216,23 @@ class FrozenEncoder:
             "trust_remote_code": cfg.trust_remote_code,
             "local_files_only": _env_flag("VLMEB_LOCAL_FILES_ONLY"),
         }
+        if cfg.processor == "model_transform":
+            return None
         if cfg.processor == "clip_image":
-            return CLIPImageProcessor.from_pretrained(cfg.model_id, **kwargs)
+            return CLIPImageProcessor.from_pretrained(self.pretrained_source, **kwargs)
         if cfg.processor == "videomae":
-            return VideoMAEImageProcessor.from_pretrained(cfg.model_id, **kwargs)
+            return VideoMAEImageProcessor.from_pretrained(self.pretrained_source, **kwargs)
         if cfg.processor == "video":
             auto_video_processor = _maybe_get_video_processor()
             if auto_video_processor is not None:
                 try:
-                    return auto_video_processor.from_pretrained(cfg.model_id, **kwargs)
+                    return auto_video_processor.from_pretrained(self.pretrained_source, **kwargs)
                 except Exception:
                     pass
         try:
-            return AutoProcessor.from_pretrained(cfg.model_id, **kwargs)
+            return AutoProcessor.from_pretrained(self.pretrained_source, **kwargs)
         except Exception:
-            return AutoImageProcessor.from_pretrained(cfg.model_id, **kwargs)
+            return AutoImageProcessor.from_pretrained(self.pretrained_source, **kwargs)
 
     def _load_model(self, cfg: EncoderConfig):
         kwargs = {
@@ -222,7 +243,7 @@ class FrozenEncoder:
         }
         if cfg.disable_flash_attn:
             config = AutoConfig.from_pretrained(
-                cfg.model_id,
+                self.pretrained_source,
                 trust_remote_code=cfg.trust_remote_code,
                 local_files_only=_env_flag("VLMEB_LOCAL_FILES_ONLY"),
             )
@@ -245,7 +266,7 @@ class FrozenEncoder:
         if config is not None:
             call_kwargs["config"] = config
         try:
-            return AutoModel.from_pretrained(cfg.model_id, **call_kwargs)
+            return AutoModel.from_pretrained(self.pretrained_source, **call_kwargs)
         except AttributeError as exc:
             if call_kwargs.get("low_cpu_mem_usage") and _needs_standard_loading(exc):
                 print(
@@ -253,18 +274,18 @@ class FrozenEncoder:
                     "retrying with low_cpu_mem_usage=False."
                 )
                 call_kwargs["low_cpu_mem_usage"] = False
-                return AutoModel.from_pretrained(cfg.model_id, **call_kwargs)
+                return AutoModel.from_pretrained(self.pretrained_source, **call_kwargs)
             raise
         except TypeError:
             retry_kwargs = dict(call_kwargs)
             retry_kwargs.pop("torch_dtype", None)
             if "config" not in retry_kwargs:
                 retry_kwargs["config"] = AutoConfig.from_pretrained(
-                    cfg.model_id,
+                    self.pretrained_source,
                     trust_remote_code=cfg.trust_remote_code,
                     local_files_only=_env_flag("VLMEB_LOCAL_FILES_ONLY"),
                 )
-            model = AutoModel.from_pretrained(cfg.model_id, **retry_kwargs)
+            model = AutoModel.from_pretrained(self.pretrained_source, **retry_kwargs)
             return model.to(dtype=self.dtype)
 
     @torch.no_grad()
@@ -286,6 +307,9 @@ class FrozenEncoder:
         return tokens.squeeze(0).float().cpu()
 
     def _encode_as_video(self, frames: list[Image.Image]) -> torch.Tensor:
+        if self.processor is None and hasattr(self.model, "transform") and hasattr(self.model, "encode_vision"):
+            return self._encode_with_model_transform(frames)
+
         try:
             batch = self.processor(videos=[frames], return_tensors="pt")
         except Exception:
@@ -303,6 +327,14 @@ class FrozenEncoder:
         outputs = self.model(**batch)
         tokens = _extract_tokens(outputs, self.cfg.feature_key)
         tokens = _ensure_token_tensor(tokens)
+        tokens = adaptive_token_pool(tokens, self.cfg.max_tokens)
+        return tokens.squeeze(0).float().cpu()
+
+    def _encode_with_model_transform(self, frames: list[Image.Image]) -> torch.Tensor:
+        video = _frames_to_tchw_uint8(frames)
+        transformed = self.model.transform(video).unsqueeze(0).to(device=self.device, dtype=self.dtype)
+        outputs = self.model.encode_vision(transformed, test=True)
+        tokens = _ensure_token_tensor(outputs)
         tokens = adaptive_token_pool(tokens, self.cfg.max_tokens)
         return tokens.squeeze(0).float().cpu()
 

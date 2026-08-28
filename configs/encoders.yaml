@@ -72,6 +72,17 @@ vjepa2-vith-256:
   num_frames: 64
   max_tokens: 256
 
+internvideo2-clip-s:
+  family: video
+  model_id: OpenGVLab/InternVideo2_CLIP_S
+  trust_remote_code: true
+  processor: model_transform
+  feature_key: auto
+  low_cpu_mem_usage: false
+  num_frames: 8
+  max_tokens: 256
+  note: "AutoModel-compatible InternVideo2-CLIP checkpoint. Uses the model's bundled transform and encode_vision API."
+
 internvideo2-clip-1b:
   family: video
   model_id: OpenGVLab/InternVideo2-CLIP-1B-224p-f8
@@ -80,4 +91,4 @@ internvideo2-clip-1b:
   feature_key: auto
   num_frames: 8
   max_tokens: 256
-  note: "This checkpoint is gated on Hugging Face. Accept the license before running."
+  note: "Gated add-on checkpoint. The HF repo contains 1B_clip.pth but no Transformers config.json; use official InternVideo code or internvideo2-clip-s for this harness."
