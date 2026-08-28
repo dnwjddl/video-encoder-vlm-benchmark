@@ -75,7 +75,9 @@ def list_snapshot_files(snapshot_path: str, *, allow_missing_processor: bool = F
 
 def check_transformers_loaders(source: str, label: str, *, allow_missing_processor: bool = False) -> tuple[object, object, bool]:
     from transformers import AutoConfig, AutoImageProcessor, AutoModel, AutoProcessor
-    from vlmevalbench.encoders import _disable_flash_attn_in_config
+    from vlmevalbench.encoders import _disable_flash_attn_in_config, _patch_transformers_tied_weights_compat
+
+    _patch_transformers_tied_weights_compat()
 
     config = None
     ok = True
@@ -209,9 +211,10 @@ def main() -> None:
     failed = failed or not repo_loaders_ok or not snapshot_loaders_ok
 
     if args.load_model and config is not None:
-        from vlmevalbench.encoders import _temporary_flash_attn_stub
+        from vlmevalbench.encoders import _patch_transformers_tied_weights_compat, _temporary_flash_attn_stub
 
         try:
+            _patch_transformers_tied_weights_compat()
             with _temporary_flash_attn_stub():
                 model = auto_model.from_pretrained(
                     snapshot_path,

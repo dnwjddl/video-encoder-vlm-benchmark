@@ -379,6 +379,30 @@ def _needs_standard_loading(exc: AttributeError) -> bool:
     return "all_tied_weights_keys" in message or "_tied_weights_keys" in message
 
 
+def _patch_transformers_tied_weights_compat() -> None:
+    try:
+        from transformers.modeling_utils import PreTrainedModel
+    except Exception:
+        return
+    if hasattr(PreTrainedModel, "all_tied_weights_keys"):
+        return
+
+    def all_tied_weights_keys(self) -> dict[str, str]:
+        keys: dict[str, str] = {}
+        for source in [type(self), self]:
+            for attr_name in ("_tied_weights_keys", "_dynamic_tied_weights_keys"):
+                raw_keys = getattr(source, attr_name, None)
+                if raw_keys is None:
+                    continue
+                if isinstance(raw_keys, Mapping):
+                    keys.update({str(key): str(value) for key, value in raw_keys.items()})
+                elif isinstance(raw_keys, (list, tuple, set)):
+                    keys.update({str(key): str(key) for key in raw_keys})
+        return keys
+
+    PreTrainedModel.all_tied_weights_keys = property(all_tied_weights_keys)
+
+
 def _env_flag(name: str, default: bool = False) -> bool:
     value = os.environ.get(name)
     if value is None:
@@ -474,6 +498,7 @@ class FrozenEncoder:
         call_kwargs = dict(kwargs)
         if config is not None:
             call_kwargs["config"] = config
+        _patch_transformers_tied_weights_compat()
         try:
             return AutoModel.from_pretrained(self.pretrained_source, **call_kwargs)
         except AttributeError as exc:
