@@ -56,6 +56,7 @@ def main() -> None:
     encoder = FrozenEncoder(cfg, device=args.device, dtype=get_dtype(args.dtype))
     index_records = []
     skipped = 0
+    skipped_decode = 0
 
     for record in tqdm(records, desc=f"extract:{args.encoder}"):
         record_id = str(record["id"])
@@ -76,7 +77,16 @@ def main() -> None:
                 "Set media_path correctly or pass --allow-missing-media."
             )
 
-        frames = load_media_frames(media_path, record.get("media_type", "video"), cfg.num_frames)
+        try:
+            frames = load_media_frames(media_path, record.get("media_type", "video"), cfg.num_frames)
+        except Exception as exc:
+            if args.allow_missing_media:
+                skipped += 1
+                skipped_decode += 1
+                print(f"Warning: skipped unreadable media id={record_id} path={media_path}: {type(exc).__name__}: {exc}")
+                continue
+            raise
+
         features = encoder.encode_frames(frames)
         torch.save(
             {
@@ -104,11 +114,17 @@ def main() -> None:
             "manifest": str(args.manifest),
             "num_records": len(index_records),
             "skipped": skipped,
+            "skipped_decode": skipped_decode,
         },
     )
+    if not index_records:
+        raise RuntimeError(
+            "No feature files were written. Check whether media files are readable "
+            "and whether the selected encoder can run in this environment."
+        )
     print(f"Wrote {len(index_records)} feature files to {feature_dir}")
     if skipped:
-        print(f"Skipped {skipped} records with missing media.")
+        print(f"Skipped {skipped} records with missing or unreadable media.")
 
 
 if __name__ == "__main__":

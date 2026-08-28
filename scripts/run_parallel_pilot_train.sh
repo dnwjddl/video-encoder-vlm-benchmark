@@ -21,6 +21,8 @@ EPOCHS="${EPOCHS:-1}"
 LR="${LR:-1e-3}"
 NUM_WORKERS="${NUM_WORKERS:-2}"
 SAVE_EVERY_STEPS="${SAVE_EVERY_STEPS:-200}"
+ALLOW_MISSING_MEDIA="${ALLOW_MISSING_MEDIA:-1}"
+LOG_TAIL_LINES="${LOG_TAIL_LINES:-80}"
 
 IFS=',' read -r -a ENCODERS <<< "${ENCODERS_CSV}"
 IFS=',' read -r -a GPUS <<< "${GPUS_CSV}"
@@ -42,6 +44,19 @@ fi
 
 mkdir -p "${FEATURE_ROOT}" "${OUT_ROOT}" "${RUN_ROOT}"
 
+print_failure_logs() {
+  echo
+  echo "Recent worker log output:"
+  for log_file in "${RUN_ROOT}"/worker_gpu*.log; do
+    if [ ! -f "${log_file}" ]; then
+      continue
+    fi
+    echo
+    echo "==> ${log_file}"
+    tail -n "${LOG_TAIL_LINES}" "${log_file}" || true
+  done
+}
+
 run_worker() {
   local gpu_idx="$1"
   local gpu="${GPUS[$gpu_idx]}"
@@ -59,6 +74,7 @@ run_worker() {
     echo "out_root=${OUT_ROOT}"
     echo "HF_HOME=${HF_HOME}"
     echo "VLMEB_LOCAL_FILES_ONLY=${VLMEB_LOCAL_FILES_ONLY}"
+    echo "ALLOW_MISSING_MEDIA=${ALLOW_MISSING_MEDIA}"
 
     for idx in "${!ENCODERS[@]}"; do
       if [ $((idx % ${#GPUS[@]})) -ne "${gpu_idx}" ]; then
@@ -67,13 +83,20 @@ run_worker() {
 
       encoder="${ENCODERS[$idx]}"
       echo "==> Extracting ${encoder} on GPU ${gpu}"
-      if ! python scripts/extract_features.py \
-        --manifest "${MANIFEST}" \
-        --encoder "${encoder}" \
-        --out-dir "${FEATURE_ROOT}/${encoder}" \
-        --max-tokens "${MAX_TOKENS}" \
-        --dtype "${DTYPE}" \
-        --skip-existing; then
+      extract_args=(
+        scripts/extract_features.py
+        --manifest "${MANIFEST}"
+        --encoder "${encoder}"
+        --out-dir "${FEATURE_ROOT}/${encoder}"
+        --max-tokens "${MAX_TOKENS}"
+        --dtype "${DTYPE}"
+        --skip-existing
+      )
+      if [ "${ALLOW_MISSING_MEDIA}" = "1" ]; then
+        extract_args+=(--allow-missing-media)
+      fi
+
+      if ! python "${extract_args[@]}"; then
         echo "FAIL extract ${encoder}" >> "${status_file}"
         exit 1
       fi
@@ -120,6 +143,7 @@ done
 if [ "${failed}" -ne 0 ]; then
   echo "Worker status:"
   cat "${RUN_ROOT}"/worker_gpu*.status 2>/dev/null || true
+  print_failure_logs
   echo "One or more pilot training jobs failed. Check logs under ${RUN_ROOT}." >&2
   exit 1
 fi
