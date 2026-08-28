@@ -3,7 +3,7 @@ HF_HOME ?= /mnt/disks/data/hf_cache
 PILOT_MCQ ?= data/benchmarks/hf_video_debug_mcq.jsonl
 export HF_HOME
 
-.PHONY: install storage data activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel perturb-mcq pilot-mcq train-pilot extract train eval
+.PHONY: install storage doctor data activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel perturb-mcq pilot-mcq train-pilot extract train eval
 
 install:
 	pip install -e .
@@ -11,6 +11,9 @@ install:
 
 storage:
 	bash scripts/setup_storage.sh $(STORAGE_ROOT)
+
+doctor:
+	python scripts/check_runtime.py
 
 data:
 	python scripts/download_data.py \
