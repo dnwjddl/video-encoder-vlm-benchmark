@@ -672,6 +672,17 @@ all-question accuracy, per-encoder hard accuracy, and shared-hard accuracy.
 `mvbench_remaining_question_counts.png` shows how many hard questions are left
 after shortcut filtering for each encoder and for the shared-hard subset.
 
+For the plain 4000-question MVBench score without any filtering, use:
+
+```bash
+make mvbench-overall
+column -s, -t < outputs/mvbench/analysis/overall_accuracy.csv | less -S
+```
+
+`overall_accuracy` is `correct / manifest_examples` from original-video
+predictions only. When `complete=true`, every manifest question has an original
+prediction for that encoder.
+
 ## Practical run order
 
 For a new server, do this first:

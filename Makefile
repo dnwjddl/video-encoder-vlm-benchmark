@@ -18,7 +18,7 @@ DIAGNOSTICS_TABLE ?= outputs/no_train_diagnostics_table.csv
 DIAGNOSTICS_FIGURE ?= outputs/figures/no_train_diagnostics_overview
 export HF_HOME
 
-.PHONY: install storage doctor doctor-model check-encoder smoke-encoder check-problem-encoders check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k train-manifest-20k mvbench-manifest mvbench-eval mvbench-analyze activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel figure-diagnostics perturb-mcq pilot-mcq train-pilot train-5k train-20k train-20k-all extract train eval
+.PHONY: install storage doctor doctor-model check-encoder smoke-encoder check-problem-encoders check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k train-manifest-20k mvbench-manifest mvbench-eval mvbench-analyze mvbench-overall activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel figure-diagnostics perturb-mcq pilot-mcq train-pilot train-5k train-20k train-20k-all extract train eval
 
 install:
 	pip install -e .
@@ -224,6 +224,13 @@ mvbench-analyze:
 		--out-dir outputs/mvbench/analysis \
 		--encoders $(ALL_ENCODERS) \
 		$(if $(filter 1,$(MVBENCH_ANALYZE_SKIP_INCOMPLETE)),--skip-incomplete,)
+
+mvbench-overall:
+	python scripts/aggregate_mvbench_overall.py \
+		--manifest $(MVBENCH_MANIFEST) \
+		--eval-root outputs/mvbench/projector_eval \
+		--out outputs/mvbench/analysis/overall_accuracy.csv \
+		--encoders $(ALL_ENCODERS)
 
 train:
 	bash scripts/run_all_train.sh data/manifests/train_230k.jsonl features/train_230k checkpoints/projectors
