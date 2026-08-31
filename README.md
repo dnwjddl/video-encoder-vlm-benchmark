@@ -686,6 +686,63 @@ prediction for that encoder. The same command also writes
 `outputs/mvbench/analysis/overall_accuracy.png` and a matching PDF with the
 accuracy value labeled above each bar.
 
+## 11. Vinoground official and shortcut evaluation
+
+Vinoground contains 500 counterfactual groups. Each group has two caption-selection
+questions for the official Text score and two segment-selection questions for the
+official Video score. The Group score requires all four questions to be correct.
+
+The dataset is downloaded and extracted directly under the persistent storage root:
+
+```text
+/mnt/disks/data/vlm_encoder_benchmark/datasets/vinoground
+```
+
+First run the official original-video evaluation for all eight encoders:
+
+```bash
+source /mnt/disks/data/vlm_encoder_benchmark/env.storage
+export VLMEB_LOCAL_FILES_ONLY=1
+
+GPUS=0,1,2,3 \
+MAX_TOKENS=64 \
+MAX_LENGTH=1024 \
+make vinoground-original
+```
+
+This also runs the query-only audit once. Every binary question is evaluated with
+three equivalent prompt forms and both option orders. A question is marked as a
+robust query-only shortcut only when at least five of the six deterministic variants
+are correct.
+
+After checking the official scores, run all frame perturbations. Existing complete
+original predictions are skipped automatically:
+
+```bash
+GPUS=0,1,2,3 \
+MAX_TOKENS=64 \
+MAX_LENGTH=1024 \
+make vinoground-eval
+```
+
+The main outputs are:
+
+```text
+data/benchmarks/vinoground_all.jsonl
+data/benchmarks/vinoground_text_variants.jsonl
+outputs/vinoground/analysis/model_scores.csv
+outputs/vinoground/analysis/category_scores.csv
+outputs/vinoground/analysis/text_only_summary.csv
+outputs/vinoground/analysis/vinoground_official_scores.png
+outputs/vinoground/analysis/vinoground_perturbation_group_scores.png
+outputs/vinoground/analysis/vinoground_query_only_scores.png
+outputs/vinoground/analysis/vinoground_category_group_heatmap.png
+```
+
+Only `original` is an official Vinoground score. `single`, `reverse`, and `shuffle`
+retain the original labels, so they are shortcut-retention and temporal-sensitivity
+diagnostics rather than newly annotated ground-truth accuracies.
+
 ## Practical run order
 
 For a new server, do this first:

@@ -5,7 +5,7 @@ STORAGE_ROOT="${1:-/mnt/disks/data/vlm_encoder_benchmark}"
 HF_CACHE_ROOT="${2:-/mnt/disks/data/hf_cache}"
 ENV_FILE="${STORAGE_ROOT}/env.storage"
 
-mkdir -p "${STORAGE_ROOT}"/{data,features,outputs,checkpoints,runs,videos}
+mkdir -p "${STORAGE_ROOT}"/{data,datasets,features,outputs,checkpoints,runs,videos}
 mkdir -p "${STORAGE_ROOT}/data"/{manifests,benchmarks}
 mkdir -p "${HF_CACHE_ROOT}"
 

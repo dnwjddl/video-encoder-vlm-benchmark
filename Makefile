@@ -12,13 +12,17 @@ MVBENCH_MANIFEST ?= data/benchmarks/mvbench_all.jsonl
 MVBENCH_VALIDATE_MEDIA ?= 0
 MVBENCH_SKIP_MISSING_MEDIA ?= 1
 MVBENCH_ANALYZE_SKIP_INCOMPLETE ?= 1
+VINOGROUND_ROOT ?= $(STORAGE_ROOT)/datasets/vinoground
+VINOGROUND_MANIFEST ?= data/benchmarks/vinoground_all.jsonl
+VINOGROUND_TEXT_VARIANTS ?= data/benchmarks/vinoground_text_variants.jsonl
+VINOGROUND_ANALYZE_SKIP_INCOMPLETE ?= 1
 ENCODER ?= internvit-300m
 GPU ?= 0
 DIAGNOSTICS_TABLE ?= outputs/no_train_diagnostics_table.csv
 DIAGNOSTICS_FIGURE ?= outputs/figures/no_train_diagnostics_overview
 export HF_HOME
 
-.PHONY: install storage doctor doctor-model check-encoder smoke-encoder check-problem-encoders check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k train-manifest-20k mvbench-manifest mvbench-eval mvbench-analyze mvbench-overall activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel figure-diagnostics perturb-mcq pilot-mcq train-pilot train-5k train-20k train-20k-all extract train eval
+.PHONY: install storage doctor doctor-model check-encoder smoke-encoder check-problem-encoders check-flash-attn check-llm download-llm download-internvideo2-clip-s data train-manifest-5k train-manifest-20k mvbench-manifest mvbench-eval mvbench-analyze mvbench-overall vinoground-download vinoground-manifest vinoground-original vinoground-eval vinoground-analyze activitynet-debug video-debug hf-video-debug kinetics700-debug diagnose diagnose-parallel figure-diagnostics perturb-mcq pilot-mcq train-pilot train-5k train-20k train-20k-all extract train eval
 
 install:
 	pip install -e .
@@ -231,6 +235,46 @@ mvbench-overall:
 		--eval-root outputs/mvbench/projector_eval \
 		--out outputs/mvbench/analysis/overall_accuracy.csv \
 		--encoders $(ALL_ENCODERS)
+
+vinoground-download:
+	VLMEB_LOCAL_FILES_ONLY=0 python scripts/download_vinoground.py \
+		--out-dir $(VINOGROUND_ROOT)
+
+vinoground-manifest: vinoground-download
+	python scripts/build_vinoground_manifest.py \
+		--vinoground-root $(VINOGROUND_ROOT) \
+		--out $(VINOGROUND_MANIFEST)
+	python scripts/build_vinoground_text_variants.py \
+		--input $(VINOGROUND_MANIFEST) \
+		--out $(VINOGROUND_TEXT_VARIANTS)
+
+vinoground-original: vinoground-manifest
+	MODES=original bash scripts/run_parallel_vinoground_eval.sh \
+		$(VINOGROUND_MANIFEST) \
+		$(VINOGROUND_TEXT_VARIANTS) \
+		features/vinoground \
+		checkpoints/projectors_20k \
+		outputs/vinoground \
+		runs/vinoground_eval
+
+vinoground-eval: vinoground-manifest
+	bash scripts/run_parallel_vinoground_eval.sh \
+		$(VINOGROUND_MANIFEST) \
+		$(VINOGROUND_TEXT_VARIANTS) \
+		features/vinoground \
+		checkpoints/projectors_20k \
+		outputs/vinoground \
+		runs/vinoground_eval
+
+vinoground-analyze:
+	python scripts/aggregate_vinoground.py \
+		--manifest $(VINOGROUND_MANIFEST) \
+		--text-variant-manifest $(VINOGROUND_TEXT_VARIANTS) \
+		--text-predictions outputs/vinoground/text_only/predictions.jsonl \
+		--eval-root outputs/vinoground/projector_eval \
+		--out-dir outputs/vinoground/analysis \
+		--encoders $(ALL_ENCODERS) \
+		$(if $(filter 1,$(VINOGROUND_ANALYZE_SKIP_INCOMPLETE)),--skip-incomplete,)
 
 train:
 	bash scripts/run_all_train.sh data/manifests/train_230k.jsonl features/train_230k checkpoints/projectors

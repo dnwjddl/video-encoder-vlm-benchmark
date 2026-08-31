@@ -10,6 +10,7 @@ Recommended server layout:
 /mnt/disks/data/
   hf_cache/
   vlm_encoder_benchmark/
+    datasets/
     data/
       manifests/
       benchmarks/
