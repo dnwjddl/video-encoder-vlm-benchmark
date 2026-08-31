@@ -677,11 +677,14 @@ For the plain 4000-question MVBench score without any filtering, use:
 ```bash
 make mvbench-overall
 column -s, -t < outputs/mvbench/analysis/overall_accuracy.csv | less -S
+ls -lh outputs/mvbench/analysis/overall_accuracy.*
 ```
 
 `overall_accuracy` is `correct / manifest_examples` from original-video
 predictions only. When `complete=true`, every manifest question has an original
-prediction for that encoder.
+prediction for that encoder. The same command also writes
+`outputs/mvbench/analysis/overall_accuracy.png` and a matching PDF with the
+accuracy value labeled above each bar.
 
 ## Practical run order
 
