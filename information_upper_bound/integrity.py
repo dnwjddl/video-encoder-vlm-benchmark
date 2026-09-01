@@ -11,9 +11,10 @@ import hashlib
 import json
 from pathlib import Path
 import re
-from typing import Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
-import torch
+if TYPE_CHECKING:
+    import torch
 
 
 _SNAPSHOT_REVISION = re.compile(r"^[0-9a-fA-F]{7,64}$")
@@ -325,6 +326,13 @@ def validate_locked_pretrained_revision(
 
 
 def tensor_identity(tensor: torch.Tensor) -> dict[str, Any]:
+    # Keep torch out of lightweight CLI startup.  On some Linux Conda hosts,
+    # importing torch before the stdlib sqlite3 extension causes the dynamic
+    # loader to pin the host's older libstdc++.so.6.  sqlite3's Conda ICU then
+    # cannot resolve newer CXXABI symbols.  The tensor-only path can safely pay
+    # the import cost when it is actually used.
+    import torch
+
     if not torch.is_tensor(tensor):
         raise TypeError("tensor_identity expects a torch.Tensor")
     value = tensor.detach().cpu().contiguous()

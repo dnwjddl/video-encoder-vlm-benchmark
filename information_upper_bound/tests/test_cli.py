@@ -4,6 +4,8 @@ from contextlib import redirect_stdout
 import io
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -13,6 +15,23 @@ from information_upper_bound.tests.test_schema_conditions import base_record
 
 
 class TrialBuildCliTests(unittest.TestCase):
+    def test_cli_imports_sqlite_before_any_torch_runtime(self) -> None:
+        probe = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; import information_upper_bound.cli; "
+                    "assert 'sqlite3' in sys.modules; "
+                    "assert 'torch' not in sys.modules"
+                ),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(probe.returncode, 0, probe.stderr)
+
     def test_confirmatory_build_requires_data_lock_and_development_is_explicit(
         self,
     ) -> None:

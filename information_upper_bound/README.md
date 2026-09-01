@@ -239,6 +239,27 @@ env -u LD_LIBRARY_PATH python -c \
 env -u LD_LIBRARY_PATH information-upper-bound --help
 ```
 
+If the direct `sqlite3` probe succeeds but the console command still fails,
+another native module loaded the host C++ runtime first. Update this folder to
+the current `main` version, which keeps PyTorch out of lightweight CLI startup,
+and refresh the editable install:
+
+```bash
+git fetch origin
+git merge --ff-only origin/main
+python -m pip install -e ./information_upper_bound
+env -u LD_LIBRARY_PATH information-upper-bound --help
+```
+
+For an immediate one-command diagnostic or temporary workaround, explicitly
+preload the environment-local C++ runtime:
+
+```bash
+env -u LD_LIBRARY_PATH \
+  LD_PRELOAD="$CONDA_PREFIX/lib/libstdc++.so.6" \
+  information-upper-bound --help
+```
+
 When those commands pass, run `unset LD_LIBRARY_PATH` in that shell before the
 benchmark. Conda's own troubleshooting guidance recommends removing an
 inherited Linux `LD_LIBRARY_PATH` because it can override environment-local C
