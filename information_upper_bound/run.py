@@ -33,6 +33,12 @@ from .protocol import (
     validate_locked_projector_protocol,
 )
 from .schema import diagnostic_metadata
+from .score_partition import (
+    SCORING_PARTITION_ALGORITHM,
+    SCORING_PARTITION_SCHEMA_VERSION,
+    score_worker_index as _score_worker_index,
+    validate_score_worker as _validate_score_worker,
+)
 from .scoring import SCORING_PROTOCOL_VERSION, FrozenMultipleChoiceScorer
 
 
@@ -396,6 +402,20 @@ def _trial_rows(path: Path, limit: int | None) -> Iterator[dict[str, Any]]:
     return itertools.islice(rows, limit) if limit is not None else rows
 
 
+def _selected_trial_rows(
+    path: Path,
+    limit: int | None,
+    *,
+    selected_trial_ids: set[str],
+) -> Iterator[dict[str, Any]]:
+    """Read the full manifest representation and yield one authenticated subset."""
+
+    for row in _trial_rows(path, limit):
+        trial_id = str(row.get("trial_id", row.get("id", "")))
+        if trial_id in selected_trial_ids:
+            yield row
+
+
 def _validate_provenance(
     *,
     projector_metadata: Mapping[str, Any],
@@ -517,9 +537,16 @@ def run_trials(
     limit: int | None = None,
     feature_cache_size: int = 16,
     protocol_config_path: str | Path | None = None,
+    worker_count: int = 1,
+    worker_index: int = 0,
 ) -> dict[str, Any]:
     trials_file = Path(trials_path).resolve()
     output_file = Path(output_path).resolve()
+    _validate_score_worker(worker_count=worker_count, worker_index=worker_index)
+    if limit is not None and worker_count != 1:
+        raise ValueError(
+            "--limit cannot be combined with --worker-count greater than 1"
+        )
     if output_file.suffix.casefold() == ".gz":
         raise ValueError(
             "score output must be an uncompressed JSONL for durable per-row fsync/resume; "
@@ -582,9 +609,13 @@ def run_trials(
     trial_ids: set[str] = set()
     expected_designs: dict[str, dict[str, Any]] = {}
     trial_identity_rows: list[dict[str, str]] = []
+    selected_trial_ids: set[str] = set()
+    selected_expected_designs: dict[str, dict[str, Any]] = {}
+    selected_trial_identity_rows: list[dict[str, str]] = []
     visual_ids: set[str] = set()
     num_trials = 0
     num_visual_trials = 0
+    selected_num_visual_trials = 0
     trial_build_attestation_sha256_values: set[str] = set()
     for row in _trial_rows(trials_file, limit):
         trial_id = str(row.get("trial_id", row.get("id", "")))
@@ -618,19 +649,28 @@ def run_trials(
             trial_build_attestation_sha256_values.add(
                 str(attestation["attestation_sha256"])
             )
+        design = _result_design_from_trial(row)
+        identity_row = {
+            "trial_id": trial_id,
+            "trial_content_sha256": computed_content_hash,
+        }
         trial_ids.add(trial_id)
-        expected_designs[trial_id] = _result_design_from_trial(row)
-        trial_identity_rows.append(
-            {
-                "trial_id": trial_id,
-                "trial_content_sha256": computed_content_hash,
-            }
-        )
+        expected_designs[trial_id] = design
+        trial_identity_rows.append(identity_row)
         num_trials += 1
         visual_id = row.get("visual_id")
         if visual_id not in (None, ""):
             visual_ids.add(str(visual_id))
             num_visual_trials += 1
+        if (
+            _score_worker_index(computed_content_hash, worker_count=worker_count)
+            == worker_index
+        ):
+            selected_trial_ids.add(trial_id)
+            selected_expected_designs[trial_id] = design
+            selected_trial_identity_rows.append(identity_row)
+            if visual_id not in (None, ""):
+                selected_num_visual_trials += 1
     if not num_trials:
         raise ValueError(f"trial manifest is empty: {trials_file}")
     if locked_protocol is not None and len(trial_build_attestation_sha256_values) != 1:
@@ -761,6 +801,13 @@ def run_trials(
                 f"feature index is missing {len(missing)} visual inputs: {preview}"
             )
 
+    if not selected_trial_identity_rows:
+        raise ValueError(
+            f"score worker {worker_index} of {worker_count} has no assigned trials"
+        )
+    selected_trial_set = trial_set_identity(selected_trial_identity_rows)
+    selected_num_trials = len(selected_trial_identity_rows)
+
     scorer = FrozenMultipleChoiceScorer(
         projector_checkpoint=projector_checkpoint,
         projector_metadata=projector_metadata,
@@ -827,7 +874,7 @@ def run_trials(
         "overflow_policy": overflow_policy,
     }
     global_signature_sha256 = canonical_sha256(global_signature)
-    run_signature = {
+    run_signature: dict[str, Any] = {
         "schema_version": "information_upper_bound.scoring_run_signature.v2",
         "scoring_protocol_version": SCORING_PROTOCOL_VERSION,
         "scoring_global_signature_sha256": global_signature_sha256,
@@ -836,7 +883,7 @@ def run_trials(
         "manifest_representation_matches_projector": (
             manifest_representation_matches_projector
         ),
-        "trial_set_identity": manifest_trial_set,
+        "trial_set_identity": selected_trial_set,
         "data_release_sha256": locked_data_release_sha256,
         "trial_build_attestation_sha256": trial_build_attestation_sha256,
         "trial_matrix_closure_sha256": global_signature["trial_matrix_closure_sha256"],
@@ -859,6 +906,16 @@ def run_trials(
         "overflow_policy": overflow_policy,
         "limit": limit,
     }
+    score_partition = {
+        "schema_version": SCORING_PARTITION_SCHEMA_VERSION,
+        "algorithm": SCORING_PARTITION_ALGORITHM,
+        "worker_count": worker_count,
+        "worker_index": worker_index,
+    }
+    # Preserve the exact legacy single-worker run-signature payload so durable
+    # pre-partition outputs remain resumable after this option is introduced.
+    if worker_count != 1:
+        run_signature["score_partition"] = score_partition
     run_signature_sha256 = canonical_sha256(run_signature)
     if resume and output_file.exists() and not metadata_file.exists():
         raise ValueError(
@@ -893,7 +950,7 @@ def run_trials(
         if output_file.exists():
             completed = _validate_existing_output(
                 output_file,
-                expected_designs=expected_designs,
+                expected_designs=selected_expected_designs,
                 run_signature_sha256=run_signature_sha256,
                 global_signature_sha256=global_signature_sha256,
             )
@@ -901,14 +958,14 @@ def run_trials(
             completed = set()
     else:
         completed = set()
-    initial_report = {
+    initial_report: dict[str, Any] = {
         "status": "running",
         "result_integrity_schema_version": RESULT_INTEGRITY_SCHEMA_VERSION,
         "global_signature": global_signature,
         "global_signature_sha256": global_signature_sha256,
         "run_signature": run_signature,
         "run_signature_sha256": run_signature_sha256,
-        "trial_set_identity": manifest_trial_set,
+        "trial_set_identity": selected_trial_set,
         "data_release_sha256": locked_data_release_sha256,
         "trial_build_attestation_sha256": trial_build_attestation_sha256,
         "trial_matrix_closure_sha256": global_signature["trial_matrix_closure_sha256"],
@@ -919,19 +976,36 @@ def run_trials(
             manifest_representation_matches_projector
         ),
         "output": str(output_file),
-        "num_trials_requested": num_trials,
+        "num_trials_requested": selected_num_trials,
         "num_completed_before_run": len(completed),
     }
+    if worker_count != 1:
+        initial_report.update(
+            {
+                "score_partition": score_partition,
+                "num_trials_in_full_manifest": num_trials,
+                "num_visual_trials_in_full_manifest": num_visual_trials,
+            }
+        )
     write_json(metadata_file, initial_report)
 
     started = time.time()
     wrote = 0
     failures: list[dict[str, str]] = []
     skipped_completed = 0
+    score_rows = (
+        _trial_rows(trials_file, limit)
+        if worker_count == 1
+        else _selected_trial_rows(
+            trials_file,
+            limit,
+            selected_trial_ids=selected_trial_ids,
+        )
+    )
     with output_file.open("a", encoding="utf-8") as handle:
         for trial in tqdm(
-            _trial_rows(trials_file, limit),
-            total=num_trials,
+            score_rows,
+            total=selected_num_trials,
             desc="information-upper-bound:score",
         ):
             trial_id = str(trial.get("trial_id", trial.get("id")))
@@ -1004,14 +1078,14 @@ def run_trials(
                 if not continue_on_error:
                     raise
 
-    report = {
+    report: dict[str, Any] = {
         "status": "complete" if not failures else "complete_with_failures",
         "result_integrity_schema_version": RESULT_INTEGRITY_SCHEMA_VERSION,
         "global_signature": global_signature,
         "global_signature_sha256": global_signature_sha256,
         "run_signature": run_signature,
         "run_signature_sha256": run_signature_sha256,
-        "trial_set_identity": manifest_trial_set,
+        "trial_set_identity": selected_trial_set,
         "data_release_sha256": locked_data_release_sha256,
         "trial_build_attestation_sha256": trial_build_attestation_sha256,
         "trial_matrix_closure_sha256": global_signature["trial_matrix_closure_sha256"],
@@ -1042,8 +1116,8 @@ def run_trials(
         "device": str(scorer.device),
         "max_length": max_length,
         "overflow_policy": overflow_policy,
-        "num_trials_requested": num_trials,
-        "num_visual_trials": num_visual_trials,
+        "num_trials_requested": selected_num_trials,
+        "num_visual_trials": selected_num_visual_trials,
         "num_feature_entries": len(feature_store) if feature_store else 0,
         "num_written_this_run": wrote,
         "num_skipped_completed": skipped_completed,
@@ -1051,6 +1125,14 @@ def run_trials(
         "failures": failures,
         "elapsed_seconds": time.time() - started,
     }
+    if worker_count != 1:
+        report.update(
+            {
+                "score_partition": score_partition,
+                "num_trials_in_full_manifest": num_trials,
+                "num_visual_trials_in_full_manifest": num_visual_trials,
+            }
+        )
     write_json(metadata_file, report)
     return report
 
@@ -1083,6 +1165,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--continue-on-error", action="store_true")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--feature-cache-size", type=int, default=16)
+    parser.add_argument(
+        "--worker-count",
+        type=int,
+        default=1,
+        help=(
+            "number of score workers reading the same full locked manifest; each worker "
+            "executes one deterministic content-hash partition"
+        ),
+    )
+    parser.add_argument(
+        "--worker-index",
+        type=int,
+        default=0,
+        help="zero-based score worker index in [0, --worker-count)",
+    )
     return parser.parse_args(argv)
 
 
@@ -1144,6 +1241,8 @@ def main(argv: list[str] | None = None) -> None:
         limit=args.limit,
         feature_cache_size=args.feature_cache_size,
         protocol_config_path=args.protocol_config,
+        worker_count=args.worker_count,
+        worker_index=args.worker_index,
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
 

@@ -29,6 +29,9 @@ DELEGATED_COMMANDS = {
     "adapt": "information_upper_bound.adapters.cli",
     "lock-data": "information_upper_bound.data_lock",
     "prepare-clevrer-pilot-protocol": "information_upper_bound.pilot_protocol",
+    "finalize-projector-protocol": (
+        "information_upper_bound.finalize_projector_protocol"
+    ),
     "extract": "information_upper_bound.extract_features",
     "score": "information_upper_bound.run",
     "analyze": "information_upper_bound.metrics",
@@ -408,6 +411,7 @@ def main(argv: list[str] | None = None) -> None:
         "adapt",
         "lock-data",
         "prepare-clevrer-pilot-protocol",
+        "finalize-projector-protocol",
         "validate",
         "build-trials",
         "extract",
@@ -423,6 +427,8 @@ def main(argv: list[str] | None = None) -> None:
             "  lock-data     authenticate the merged manifest and adapter provenance\n"
             "  prepare-clevrer-pilot-protocol\n"
             "                bind a sampled CLEVRER lock into its pilot protocol\n"
+            "  finalize-projector-protocol\n"
+            "                authenticate and bind a trained projector into a final protocol\n"
             "  validate      audit schema, pairing, leakage, media, and coverage\n"
             "  build-trials  expand base items into controlled conditions/doses\n"
             "  extract       cache timestamp-aware frozen encoder features\n"

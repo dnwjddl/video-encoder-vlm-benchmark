@@ -428,7 +428,13 @@ trainer proves the train/evaluation units and media bytes are disjoint. It pins
 Qwen commit `a09a35458c702b33eeacc393d103063234e8bc28`:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 information-upper-bound-train-projector \
+CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
+  --multi_gpu \
+  --num_processes 4 \
+  --num_machines 1 \
+  --mixed_precision no \
+  --dynamo_backend no \
+  --module information_upper_bound.train_projector \
   --manifest data/information_upper_bound/clevrer_pilot/train_2000.full_video.trials.jsonl.gz \
   --feature-index features/information_upper_bound/clevrer_pilot/train/index.jsonl \
   --feature-metadata features/information_upper_bound/clevrer_pilot/train/metadata.json \
@@ -441,21 +447,115 @@ CUDA_VISIBLE_DEVICES=0 information-upper-bound-train-projector \
   --train-protocol-config information_upper_bound/configs/clevrer_projector_train_protocol.yaml \
   --conditions-config information_upper_bound/configs/clevrer_core_conditions.yaml \
   --protocol-config data/information_upper_bound/clevrer_pilot/protocol.yaml \
-  --out-dir checkpoints/projectors/information_upper_bound/clevrer_pilot/run-001 \
+  --out-dir checkpoints/projectors/information_upper_bound/clevrer_pilot/run-4gpu-001 \
   --encoder-name internvideo2-clip-s \
   --llm-id Qwen/Qwen2.5-7B-Instruct \
   --llm-revision a09a35458c702b33eeacc393d103063234e8bc28 \
   --dtype bf16 --max-length 4096 --seed 42 \
-  --batch-size 1 --grad-accum 16 --epochs 1
+  --batch-size 1 --grad-accum 4 --epochs 1
 ```
 
-Copy the exact fields from the final checkpoint's
-`protocol_projector_lock.json` into only the `projector` section of the generated
-pilot protocol, then follow steps 7 and 8 below to score and analyze. Never guess
-the final `step_*` directory. The core matrix has at most 33 condition-dose
+With four workers, `batch-size 1 x 4 GPUs x grad-accum 4` preserves the
+registered effective batch size of 16. For the exact 28,070-row training
+matrix, the final checkpoint is `step_007018`; intermediate `step_001000`
+through `step_007000` directories are not the final checkpoint.
+
+Authenticate the final checkpoint and create a separate final protocol. This
+command verifies the checkpoint/metadata digests, requires the lock fields to
+match the projector template exactly, and proves that every non-projector
+preregistered field retains the same trial-build hash:
+
+```bash
+information-upper-bound finalize-projector-protocol \
+  --protocol data/information_upper_bound/clevrer_pilot/protocol.yaml \
+  --projector-lock checkpoints/projectors/information_upper_bound/clevrer_pilot/run-4gpu-001/step_007018/protocol_projector_lock.json \
+  --projector-ckpt checkpoints/projectors/information_upper_bound/clevrer_pilot/run-4gpu-001/step_007018/projector.pt \
+  --projector-metadata checkpoints/projectors/information_upper_bound/clevrer_pilot/run-4gpu-001/step_007018/metadata.json \
+  --out data/information_upper_bound/clevrer_pilot/protocol.final.yaml
+```
+
+Use `protocol.final.yaml` for both scoring and analysis, and preserve the
+pre-projector `protocol.yaml`. Never guess the final `step_*` directory. The
+core matrix has at most 33 condition-dose
 cells per binary base row and two answer-position permutations: roughly 468k
 trials for 500 scenes. Scoring, rather than feature extraction, is therefore the
 main runtime cost.
+
+For the pilot, score that one complete locked matrix on four GPUs with four
+independent processes. The paths below use the registered four-GPU pilot's
+`step_007018` final checkpoint; run each command in its own terminal. Every process
+reads and authenticates the same full manifest, projector lock, feature bundle,
+and portable matrix closure before it executes only its deterministic
+content-hash partition. Keep `sampling.trial_shards: 1`; `--worker-count` is an
+execution partition and does not create or weaken the locked trial matrix.
+
+```bash
+mkdir -p outputs/information_upper_bound/clevrer_pilot/run-4gpu-001
+
+VLMEB_LOCAL_FILES_ONLY=1 CUDA_VISIBLE_DEVICES=0 information-upper-bound score \
+  --trials data/information_upper_bound/clevrer_pilot/validation_500.trials.jsonl.gz \
+  --feature-index features/information_upper_bound/clevrer_pilot/eval/index.jsonl \
+  --feature-metadata features/information_upper_bound/clevrer_pilot/eval/metadata.json \
+  --projector-ckpt checkpoints/projectors/information_upper_bound/clevrer_pilot/run-4gpu-001/step_007018/projector.pt \
+  --projector-metadata checkpoints/projectors/information_upper_bound/clevrer_pilot/run-4gpu-001/step_007018/metadata.json \
+  --protocol-config data/information_upper_bound/clevrer_pilot/protocol.final.yaml \
+  --out outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-0-of-4.jsonl \
+  --device cuda --worker-count 4 --worker-index 0 --resume
+
+VLMEB_LOCAL_FILES_ONLY=1 CUDA_VISIBLE_DEVICES=1 information-upper-bound score \
+  --trials data/information_upper_bound/clevrer_pilot/validation_500.trials.jsonl.gz \
+  --feature-index features/information_upper_bound/clevrer_pilot/eval/index.jsonl \
+  --feature-metadata features/information_upper_bound/clevrer_pilot/eval/metadata.json \
+  --projector-ckpt checkpoints/projectors/information_upper_bound/clevrer_pilot/run-4gpu-001/step_007018/projector.pt \
+  --projector-metadata checkpoints/projectors/information_upper_bound/clevrer_pilot/run-4gpu-001/step_007018/metadata.json \
+  --protocol-config data/information_upper_bound/clevrer_pilot/protocol.final.yaml \
+  --out outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-1-of-4.jsonl \
+  --device cuda --worker-count 4 --worker-index 1 --resume
+
+VLMEB_LOCAL_FILES_ONLY=1 CUDA_VISIBLE_DEVICES=2 information-upper-bound score \
+  --trials data/information_upper_bound/clevrer_pilot/validation_500.trials.jsonl.gz \
+  --feature-index features/information_upper_bound/clevrer_pilot/eval/index.jsonl \
+  --feature-metadata features/information_upper_bound/clevrer_pilot/eval/metadata.json \
+  --projector-ckpt checkpoints/projectors/information_upper_bound/clevrer_pilot/run-4gpu-001/step_007018/projector.pt \
+  --projector-metadata checkpoints/projectors/information_upper_bound/clevrer_pilot/run-4gpu-001/step_007018/metadata.json \
+  --protocol-config data/information_upper_bound/clevrer_pilot/protocol.final.yaml \
+  --out outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-2-of-4.jsonl \
+  --device cuda --worker-count 4 --worker-index 2 --resume
+
+VLMEB_LOCAL_FILES_ONLY=1 CUDA_VISIBLE_DEVICES=3 information-upper-bound score \
+  --trials data/information_upper_bound/clevrer_pilot/validation_500.trials.jsonl.gz \
+  --feature-index features/information_upper_bound/clevrer_pilot/eval/index.jsonl \
+  --feature-metadata features/information_upper_bound/clevrer_pilot/eval/metadata.json \
+  --projector-ckpt checkpoints/projectors/information_upper_bound/clevrer_pilot/run-4gpu-001/step_007018/projector.pt \
+  --projector-metadata checkpoints/projectors/information_upper_bound/clevrer_pilot/run-4gpu-001/step_007018/metadata.json \
+  --protocol-config data/information_upper_bound/clevrer_pilot/protocol.final.yaml \
+  --out outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-3-of-4.jsonl \
+  --device cuda --worker-count 4 --worker-index 3 --resume
+```
+
+The four output paths must remain distinct. After all four sidecars report
+`status: complete` and zero failures, concatenate only the prediction JSONL
+files, then authenticate their union by passing every worker sidecar to strict
+analysis:
+
+```bash
+cat \
+  outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-0-of-4.jsonl \
+  outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-1-of-4.jsonl \
+  outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-2-of-4.jsonl \
+  outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-3-of-4.jsonl \
+  > outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.jsonl
+
+information-upper-bound analyze \
+  --expected-trials data/information_upper_bound/clevrer_pilot/validation_500.trials.jsonl.gz \
+  --predictions outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.jsonl \
+  --score-metadata outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-0-of-4.jsonl.metadata.json \
+  --score-metadata outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-1-of-4.jsonl.metadata.json \
+  --score-metadata outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-2-of-4.jsonl.metadata.json \
+  --score-metadata outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-3-of-4.jsonl.metadata.json \
+  --out-dir outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/analysis \
+  --config data/information_upper_bound/clevrer_pilot/protocol.final.yaml
+```
 
 ### 1. Convert one or more official releases
 
@@ -698,9 +798,11 @@ The build command treats `sampling.seed`, `sampling.option_permutations`, and
 supports stable `resampling_unit_id` sharding, the current locked scoring path
 requires `sampling.trial_shards: 1`: projector metadata authenticates one full
 portable trial-set closure. Keep it at one and score the full authenticated
-matrix for a confirmatory run. Sharded construction remains useful for
-development/infrastructure work, and analysis can authenticate a union of
-multiple score sidecars, but that does not bypass the current scoring lock.
+matrix for a confirmatory run. `score --worker-count N --worker-index I` may
+execute deterministic, disjoint content-hash subsets in parallel, but every
+worker still opens and authenticates that same complete manifest and closure.
+Sharded construction remains useful only for development/infrastructure work;
+it is distinct from strict score-worker partitioning.
 
 ### 5. Extract every unique visual view once
 
@@ -1030,8 +1132,9 @@ smaller or differently phrased clue set exists.
   streaming. Matrix authentication spills trial identities and reconstructed
   bases to temporary SQLite storage; base-manifest validation, feature-index
   assembly, and statistical analysis still retain substantial state in memory.
-  The current confirmatory scorer requires one full trial manifest
-  (`trial_shards: 1`), so provision storage and temporary disk accordingly.
+  Every confirmatory score worker requires the same full trial manifest
+  (`trial_shards: 1`) and independently verifies the full feature bundle, so
+  provision storage, I/O bandwidth, and temporary disk accordingly.
 - Release creation/extraction authenticate video bytes; feature extraction and
   scoring authenticate decoded frames, tensor/file identities, and resolved
   pretrained content; scoring/analyze authenticate result rows and sidecars.

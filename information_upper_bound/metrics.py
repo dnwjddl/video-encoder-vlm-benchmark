@@ -47,6 +47,7 @@ from .protocol import (
     validate_data_protocol,
     validate_frozen_model_protocol,
 )
+from .score_partition import score_worker_index, validate_score_partition
 from .scoring import SCORING_PROTOCOL_VERSION
 
 DEFAULT_BOOTSTRAP_REPLICATES = 2000
@@ -4271,6 +4272,8 @@ def _authenticate_score_metadata(
             "before confirmatory analysis"
         )
     sidecars_by_run: dict[str, dict[str, Any]] = {}
+    score_partitions_by_run: dict[str, dict[str, int | str]] = {}
+    score_partition_presence_by_run: dict[str, bool] = {}
     loaded_paths: list[str] = []
     global_signatures: set[str] = set()
     for raw_path in metadata_paths:
@@ -4344,6 +4347,34 @@ def _authenticate_score_metadata(
             continue
         sidecars_by_run[declared_run] = {**sidecar, "_path": str(path)}
         global_signatures.add(declared_global)
+        top_level_has_partition = "score_partition" in sidecar
+        signed_has_partition = "score_partition" in run_signature
+        score_partition_presence_by_run[declared_run] = (
+            top_level_has_partition or signed_has_partition
+        )
+        if top_level_has_partition != signed_has_partition or (
+            top_level_has_partition
+            and sidecar.get("score_partition") != run_signature.get("score_partition")
+        ):
+            issues.append(
+                {
+                    "kind": "score_metadata_partition_top_level_mismatch",
+                    "path": str(path),
+                }
+            )
+        if signed_has_partition:
+            try:
+                score_partitions_by_run[declared_run] = validate_score_partition(
+                    run_signature.get("score_partition")
+                )
+            except ValueError as exc:
+                issues.append(
+                    {
+                        "kind": "score_metadata_invalid_partition",
+                        "path": str(path),
+                        "message": str(exc),
+                    }
+                )
         if (
             sidecar.get("result_integrity_schema_version")
             != RESULT_INTEGRITY_SCHEMA_VERSION
@@ -4553,6 +4584,61 @@ def _authenticate_score_metadata(
             }
         )
 
+    partitioned_runs = {
+        run_sha
+        for run_sha, present in score_partition_presence_by_run.items()
+        if present
+    }
+    if partitioned_runs and partitioned_runs != set(sidecars_by_run):
+        issues.append(
+            {
+                "kind": "score_metadata_mixed_partition_presence",
+                "partitioned_run_signatures": sorted(partitioned_runs),
+                "unpartitioned_run_signatures": sorted(
+                    set(sidecars_by_run) - partitioned_runs
+                ),
+            }
+        )
+    partition_worker_counts = {
+        int(partition["worker_count"]) for partition in score_partitions_by_run.values()
+    }
+    partition_worker_indices = [
+        int(partition["worker_index"]) for partition in score_partitions_by_run.values()
+    ]
+    if len(partition_worker_counts) > 1:
+        issues.append(
+            {
+                "kind": "score_metadata_partition_worker_count_mismatch",
+                "worker_counts": sorted(partition_worker_counts),
+            }
+        )
+    if len(partition_worker_indices) != len(set(partition_worker_indices)):
+        duplicate_indices = sorted(
+            index
+            for index, count in Counter(partition_worker_indices).items()
+            if count > 1
+        )
+        issues.append(
+            {
+                "kind": "score_metadata_duplicate_partition_worker_index",
+                "worker_indices": duplicate_indices,
+            }
+        )
+    partition_worker_count: int | None = None
+    if len(partition_worker_counts) == 1:
+        partition_worker_count = next(iter(partition_worker_counts))
+        expected_worker_indices = set(range(partition_worker_count))
+        actual_worker_indices = set(partition_worker_indices)
+        if actual_worker_indices != expected_worker_indices:
+            issues.append(
+                {
+                    "kind": "score_metadata_incomplete_partition_worker_indices",
+                    "worker_count": partition_worker_count,
+                    "expected_worker_indices": sorted(expected_worker_indices),
+                    "actual_worker_indices": sorted(actual_worker_indices),
+                }
+            )
+
     rows_by_run: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for row in prediction_rows:
         run_sha = str(row.get("scoring_run_signature_sha256", ""))
@@ -4574,6 +4660,33 @@ def _authenticate_score_metadata(
                     "trial_id": row.get("trial_id", row.get("id")),
                 }
             )
+        partition = score_partitions_by_run.get(run_sha)
+        if partition is not None:
+            trial_content_digest = str(row.get("trial_content_sha256", ""))
+            if re.fullmatch(r"[0-9a-f]{64}", trial_content_digest) is None:
+                issues.append(
+                    {
+                        "kind": "prediction_partition_content_sha256_invalid",
+                        "trial_id": row.get("trial_id", row.get("id")),
+                        "value": trial_content_digest,
+                    }
+                )
+            else:
+                actual_worker_index = score_worker_index(
+                    trial_content_digest,
+                    worker_count=int(partition["worker_count"]),
+                )
+                expected_worker_index = int(partition["worker_index"])
+                if actual_worker_index != expected_worker_index:
+                    issues.append(
+                        {
+                            "kind": "prediction_partition_owner_mismatch",
+                            "trial_id": row.get("trial_id", row.get("id")),
+                            "worker_count": int(partition["worker_count"]),
+                            "expected_worker_index": expected_worker_index,
+                            "actual_worker_index": actual_worker_index,
+                        }
+                    )
         rows_by_run[run_sha].append(row)
     for run_sha in sorted(set(sidecars_by_run) - set(rows_by_run)):
         issues.append(
@@ -4655,6 +4768,9 @@ def _authenticate_score_metadata(
         "sidecar_count": len(sidecars_by_run),
         "run_signatures": sorted(sidecars_by_run),
         "global_signatures": sorted(global_signatures),
+        "partitioned_run": bool(partitioned_runs),
+        "score_partition_worker_count": partition_worker_count,
+        "score_partition_worker_indices": sorted(set(partition_worker_indices)),
         "result_integrity_schema_version": RESULT_INTEGRITY_SCHEMA_VERSION,
         "issues": issues,
     }, issues
