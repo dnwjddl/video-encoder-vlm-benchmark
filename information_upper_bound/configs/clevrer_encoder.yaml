@@ -1,0 +1,13 @@
+# Encoder registry pinned for the CLEVRER pilot and projector-training run.
+internvideo2-clip-s:
+  family: video
+  model_id: OpenGVLab/InternVideo2_CLIP_S
+  revision: 1f9fca1389fd883defc652634d95a21121c85a8c
+  trust_remote_code: true
+  processor: model_transform
+  feature_key: auto
+  disable_flash_attn: true
+  low_cpu_mem_usage: false
+  num_frames: 8
+  max_tokens: 256
+  note: "Pinned InternVideo2-CLIP-S snapshot for the CLEVRER information pilot."

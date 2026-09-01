@@ -19,6 +19,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from .integrity import canonical_sha256
 from .io import read_jsonl, sha256_file, write_json
+from .unit_sampling import validate_resampling_unit_selection
 from .validate import validate_manifest
 
 
@@ -646,6 +647,33 @@ def create_data_lock(
             adapter_options,
             path=f"adapter report {report_path} adapter_options",
         )
+        selection_options = adapter_options.get("resampling_unit_selection")
+        selection_report = report.get("resampling_unit_selection")
+        if selection_options is None and selection_report is not None:
+            raise ValueError(
+                f"adapter report {report_path} has an unbound resampling-unit selection"
+            )
+        if selection_options is not None:
+            if not isinstance(selection_options, Mapping) or not isinstance(
+                selection_report, Mapping
+            ):
+                raise ValueError(
+                    f"adapter report {report_path} has incomplete resampling-unit "
+                    "selection metadata"
+                )
+            try:
+                validate_resampling_unit_selection(
+                    report=selection_report,
+                    options=selection_options,
+                    selected_rows=group_rows,
+                    dataset=dataset,
+                    canonical_split=canonical_split,
+                )
+            except ValueError as exc:
+                raise ValueError(
+                    f"adapter report {report_path} has invalid resampling-unit "
+                    f"selection metadata: {exc}"
+                ) from exc
         expected_run_id = _adapter_run_identity(
             dataset=dataset,
             canonical_split=canonical_split,

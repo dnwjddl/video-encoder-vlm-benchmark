@@ -571,6 +571,17 @@ def validate_locked_projector_protocol(
             projector_metadata.get("llm_pretrained_identity_sha256", "")
         ).lower(),
     }
+    if value.get("training_data_release_sha256") not in (None, ""):
+        locked["training_data_release_sha256"] = _locked_sha256(
+            value.get("training_data_release_sha256"),
+            field="projector.training_data_release_sha256",
+        )
+        training_data_lock = projector_metadata.get("training_data_lock")
+        actual["training_data_release_sha256"] = str(
+            training_data_lock.get("data_release_sha256", "")
+            if isinstance(training_data_lock, Mapping)
+            else ""
+        ).lower()
     training_dtype = str(value.get("training_dtype", "")).strip().lower()
     if training_dtype not in {"bf16", "fp16", "fp32"}:
         raise ValueError(

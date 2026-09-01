@@ -28,6 +28,7 @@ from .validate import validate_manifest
 DELEGATED_COMMANDS = {
     "adapt": "information_upper_bound.adapters.cli",
     "lock-data": "information_upper_bound.data_lock",
+    "prepare-clevrer-pilot-protocol": "information_upper_bound.pilot_protocol",
     "extract": "information_upper_bound.extract_features",
     "score": "information_upper_bound.run",
     "analyze": "information_upper_bound.metrics",
@@ -406,6 +407,7 @@ def main(argv: list[str] | None = None) -> None:
     commands = [
         "adapt",
         "lock-data",
+        "prepare-clevrer-pilot-protocol",
         "validate",
         "build-trials",
         "extract",
@@ -419,6 +421,8 @@ def main(argv: list[str] | None = None) -> None:
             "commands:\n"
             "  adapt         convert an official dataset annotation release\n"
             "  lock-data     authenticate the merged manifest and adapter provenance\n"
+            "  prepare-clevrer-pilot-protocol\n"
+            "                bind a sampled CLEVRER lock into its pilot protocol\n"
             "  validate      audit schema, pairing, leakage, media, and coverage\n"
             "  build-trials  expand base items into controlled conditions/doses\n"
             "  extract       cache timestamp-aware frozen encoder features\n"

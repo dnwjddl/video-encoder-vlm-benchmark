@@ -150,6 +150,49 @@ class IntegrityTests(unittest.TestCase):
                         ]
                     )
 
+    def test_extraction_enforces_optional_locked_encoder_identity(self) -> None:
+        protocol = {
+            "model": {
+                "visual_encoder_name": "encoder-a",
+                "visual_encoder_id": "owner/expected",
+                "visual_encoder_revision": "a" * 40,
+            },
+            "sampling": {"seed": 42},
+        }
+        resolved = SimpleNamespace(
+            model_id="owner/different",
+            revision="a" * 40,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch(
+                    "information_upper_bound.extract_features.load_protocol",
+                    return_value=(protocol, {"sha256": "c" * 64}),
+                ),
+                patch(
+                    "information_upper_bound.extract_features.iter_jsonl",
+                    return_value=iter([{"id": "base"}]),
+                ),
+                patch(
+                    "information_upper_bound.extract_features.resolve_encoder",
+                    return_value=resolved,
+                ),
+            ):
+                with self.assertRaisesRegex(ValueError, "visual_encoder_id"):
+                    extract_main(
+                        [
+                            "--manifest",
+                            "base.jsonl",
+                            "--development",
+                            "--encoder",
+                            "encoder-a",
+                            "--encoder-config",
+                            "unused.yaml",
+                            "--out-dir",
+                            str(Path(directory) / "features"),
+                        ]
+                    )
+
     def test_extraction_refuses_implicit_output_replacement_and_input_alias(
         self,
     ) -> None:
@@ -309,6 +352,7 @@ class IntegrityTests(unittest.TestCase):
             "llm_pretrained_identity_sha256",
         )
         values = {name: f"{index + 1:x}" * 64 for index, name in enumerate(names)}
+        values["training_data_release_sha256"] = "e" * 64
         closure_payload = {
             "schema_version": "information_upper_bound.trial_matrix_closure.v1",
             "status": "exact",
@@ -330,7 +374,12 @@ class IntegrityTests(unittest.TestCase):
         metadata = {
             name: value
             for name, value in values.items()
-            if name not in {"checkpoint_sha256", "metadata_sha256"}
+            if name
+            not in {
+                "checkpoint_sha256",
+                "metadata_sha256",
+                "training_data_release_sha256",
+            }
         }
         metadata.update(
             {
@@ -340,6 +389,9 @@ class IntegrityTests(unittest.TestCase):
                 "evaluation_trial_matrix_closure": {
                     **closure_payload,
                     "closure_sha256": values["evaluation_trial_matrix_closure_sha256"],
+                },
+                "training_data_lock": {
+                    "data_release_sha256": values["training_data_release_sha256"]
                 },
             }
         )

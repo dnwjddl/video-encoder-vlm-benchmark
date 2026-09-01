@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from information_upper_bound.io import sha256_file, write_json, write_jsonl
+from information_upper_bound.unit_sampling import (
+    MAX_SELECTION_SEED,
+    select_resampling_units,
+)
 from information_upper_bound.validate import validate_manifest
 
 from .common import AdapterError
@@ -316,6 +320,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Infrastructure check only; never use a limited test as a result.",
     )
     parser.add_argument(
+        "--resampling-unit-sample-size",
+        type=int,
+        help=(
+            "Select this many complete diagnostic.resampling_unit_id groups by an "
+            "answer-blind portable hash rank. Requires --resampling-unit-sample-seed."
+        ),
+    )
+    parser.add_argument(
+        "--resampling-unit-sample-seed",
+        type=int,
+        help=(
+            "Non-negative seed for answer-blind whole-unit sampling. Requires "
+            "--resampling-unit-sample-size."
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Parse and validate without writing outputs.",
@@ -360,6 +380,29 @@ def _options(args: argparse.Namespace) -> dict[str, Any]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    sample_size_given = args.resampling_unit_sample_size is not None
+    sample_seed_given = args.resampling_unit_sample_seed is not None
+    if sample_size_given != sample_seed_given:
+        raise SystemExit(
+            "adapter error: --resampling-unit-sample-size and "
+            "--resampling-unit-sample-seed must be provided together"
+        )
+    if sample_size_given and args.limit is not None:
+        raise SystemExit(
+            "adapter error: answer-blind resampling-unit sampling and --limit are "
+            "mutually exclusive"
+        )
+    if sample_size_given and args.resampling_unit_sample_size < 1:
+        raise SystemExit(
+            "adapter error: --resampling-unit-sample-size must be positive"
+        )
+    if sample_seed_given and not (
+        0 <= args.resampling_unit_sample_seed <= MAX_SELECTION_SEED
+    ):
+        raise SystemExit(
+            "adapter error: --resampling-unit-sample-seed must be in "
+            f"[0, {MAX_SELECTION_SEED}]"
+        )
     output_path = Path(args.output)
     report_path = (
         Path(args.report_output)
@@ -387,6 +430,45 @@ def main(argv: Sequence[str] | None = None) -> int:
             **_options(args),
         )
         rows = adapter.load()
+        population_rows = rows
+        resampling_unit_selection_options: dict[str, Any] | None = None
+        resampling_unit_selection_report: dict[str, Any] | None = None
+        if sample_size_given:
+            population_report = validate_manifest(
+                population_rows,
+                require_media=not args.allow_missing_media,
+                strict_diagnostic=True,
+            )
+            population_errors = [
+                issue
+                for issue in population_report.get("issues", [])
+                if issue.get("level") == "error"
+            ]
+            if population_errors:
+                preview = "; ".join(
+                    f"{issue.get('record_id') or '<manifest>'}:{issue.get('path')}: "
+                    f"{issue.get('message')}"
+                    for issue in population_errors[:10]
+                )
+                raise AdapterError(
+                    "full post-exclusion population validation failed before "
+                    f"resampling-unit selection with {len(population_errors)} errors: "
+                    f"{preview}"
+                )
+            try:
+                (
+                    rows,
+                    resampling_unit_selection_options,
+                    resampling_unit_selection_report,
+                ) = select_resampling_units(
+                    population_rows,
+                    dataset=args.dataset,
+                    canonical_split=args.split,
+                    sample_size=args.resampling_unit_sample_size,
+                    seed=args.resampling_unit_sample_seed,
+                )
+            except ValueError as exc:
+                raise AdapterError(str(exc)) from exc
         if args.limit is not None:
             if args.limit <= 0:
                 raise AdapterError("--limit must be positive")
@@ -408,7 +490,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"manifest validation failed with {len(errors)} errors: {preview}"
             )
         source_paths: set[Path] = set()
-        for row in rows:
+        provenance_rows = population_rows if sample_size_given else rows
+        for row in provenance_rows:
             provenance = (row.get("diagnostic") or {}).get("provenance") or {}
             for key, value in provenance.items():
                 if not (key.endswith("_file") or key.endswith("_path")) or value in (
@@ -435,6 +518,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             "category": args.category,
         }
+        if resampling_unit_selection_options is not None:
+            adapter_options["resampling_unit_selection"] = (
+                resampling_unit_selection_options
+            )
         adapter_run_id = "adapter-run::" + _canonical_sha256(
             {
                 "schema_version": "information_upper_bound.adapter_run.v1",
@@ -497,6 +584,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "exclusions": adapter.exclusion_report,
             "validation": report,
         }
+        if resampling_unit_selection_report is not None:
+            build_report["resampling_unit_selection"] = resampling_unit_selection_report
         if not args.dry_run:
             write_jsonl(output_path, rows)
             build_report["output_manifest_sha256"] = sha256_file(output_path)
@@ -516,6 +605,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "source_artifact_root_sha256": build_report[
                     "source_artifact_root_sha256"
                 ],
+                "resampling_unit_selection": (
+                    {
+                        key: value
+                        for key, value in resampling_unit_selection_report.items()
+                        if key not in {"population_units", "selected_unit_ids"}
+                    }
+                    if resampling_unit_selection_report is not None
+                    else None
+                ),
                 "exclusions": adapter.exclusion_report,
                 "validation": report,
             },

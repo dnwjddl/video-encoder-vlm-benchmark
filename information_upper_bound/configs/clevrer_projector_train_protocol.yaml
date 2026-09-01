@@ -1,0 +1,28 @@
+schema_version: "1.0"
+name: clevrer-projector-training
+
+model:
+  llm_id: Qwen/Qwen2.5-7B-Instruct
+  llm_revision: a09a35458c702b33eeacc393d103063234e8bc28
+  visual_encoder_name: internvideo2-clip-s
+  visual_encoder_id: OpenGVLab/InternVideo2_CLIP_S
+  visual_encoder_revision: 1f9fca1389fd883defc652634d95a21121c85a8c
+  llm_frozen: true
+  visual_encoder_frozen: true
+  projector_frozen_during_evaluation: true
+  dtype: bf16
+  max_length: 4096
+  overflow_policy: error
+
+sampling:
+  seed: 42
+  option_permutations: 1
+  trial_shards: 1
+  require_media_sha256: true
+  require_strong_encoder_identity: true
+  match_frame_budget_across_views: true
+
+dataset_roles:
+  clevrer:
+    information_families: [causal_compositional]
+    primary_use: Disjoint CLEVRER train split used only to fit the visual projector.

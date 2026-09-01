@@ -10,11 +10,20 @@ from information_upper_bound.io import write_jsonl
 from information_upper_bound.projector_training import FeatureTextDataset
 from information_upper_bound.split_integrity import audit_projector_split_disjointness
 from information_upper_bound.train_projector import (
+    CLEVRER_PROJECTOR_TRAIN_CONDITIONS_SHA256,
+    _validate_registered_pilot_training_lock,
     _validate_strict_output_directory,
     _validate_evaluation_visual_coverage,
     parse_args,
     save_checkpoint,
     strict_information_upper_bound_mode,
+)
+from information_upper_bound.clevrer_pilot_contract import expected_clevrer_unit_ids
+from information_upper_bound.unit_sampling import (
+    RESAMPLING_UNIT_FIELD,
+    RESAMPLING_UNIT_SELECTION_ALGORITHM,
+    RESAMPLING_UNIT_SELECTION_SCHEMA_VERSION,
+    resampling_unit_set_sha256,
 )
 
 
@@ -53,6 +62,66 @@ class ProjectorTrainingIntegrityTests(unittest.TestCase):
             report = audit_projector_split_disjointness(train, evaluation)
             self.assertEqual(report["overlapping_resampling_units"], 0)
             self.assertEqual(report["overlapping_media_sha256"], 0)
+
+    def test_registered_pilot_requires_official_training_population_lock(self) -> None:
+        protocol = {"pilot": {"target_resampling_units": 500}}
+        with self.assertRaisesRegex(ValueError, "requires --train-data-lock"):
+            _validate_registered_pilot_training_lock(protocol, None)
+
+        record_count = 28000
+        population_ids = expected_clevrer_unit_ids("train")
+        selection = {
+            "schema_version": RESAMPLING_UNIT_SELECTION_SCHEMA_VERSION,
+            "algorithm": RESAMPLING_UNIT_SELECTION_ALGORITHM,
+            "unit_field": RESAMPLING_UNIT_FIELD,
+            "sample_size": 2000,
+            "seed": 42,
+            "population_record_count": 141211,
+            "population_unit_count": 10000,
+            "population_unit_set_sha256": resampling_unit_set_sha256(population_ids),
+            "selected_record_count": record_count,
+        }
+        training_lock = {
+            "data_release_sha256": "b" * 64,
+            "records": record_count,
+            "datasets": {"clevrer": record_count},
+            "adapter_runs": [
+                {
+                    "dataset": "clevrer",
+                    "canonical_split": "train",
+                    "adapter_options": {
+                        "resampling_unit_selection": selection,
+                    },
+                }
+            ],
+        }
+        training_closure = {
+            "schema_version": (
+                "information_upper_bound.development_trial_matrix_closure.v1"
+            ),
+            "status": "exact",
+            "mode": "development",
+            "data_release_sha256": training_lock["data_release_sha256"],
+            "conditions_sha256": CLEVRER_PROJECTOR_TRAIN_CONDITIONS_SHA256,
+            "base_records": record_count,
+            "conditions": ["full_video"],
+            "trial_count": record_count,
+            "sampling": {
+                "seed": 42,
+                "option_permutations": 1,
+                "trial_shards": 1,
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "exact training trial-matrix closure"):
+            _validate_registered_pilot_training_lock(protocol, training_lock)
+        _validate_registered_pilot_training_lock(
+            protocol, training_lock, training_closure
+        )
+        selection["population_unit_count"] = 9999
+        with self.assertRaisesRegex(ValueError, "sampling contract mismatch"):
+            _validate_registered_pilot_training_lock(
+                protocol, training_lock, training_closure
+            )
 
     def test_feature_dataset_joins_every_trial_by_shared_visual_id(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -267,6 +336,7 @@ class ProjectorTrainingIntegrityTests(unittest.TestCase):
                 "training_feature_index_sha256": digest,
                 "training_feature_artifact_root_sha256": digest,
                 "training_feature_metadata_sha256": digest,
+                "training_data_lock": {"data_release_sha256": "b" * 64},
                 "evaluation_feature_index_sha256": digest,
                 "evaluation_feature_artifact_root_sha256": digest,
                 "evaluation_feature_metadata_sha256": digest,
@@ -292,6 +362,7 @@ class ProjectorTrainingIntegrityTests(unittest.TestCase):
             self.assertEqual(lock["evaluation_trial_matrix_closure_sha256"], digest)
             self.assertEqual(lock["evaluation_trial_set_root_sha256"], digest)
             self.assertEqual(lock["evaluation_trial_count"], 8)
+            self.assertEqual(lock["training_data_release_sha256"], "b" * 64)
 
 
 if __name__ == "__main__":

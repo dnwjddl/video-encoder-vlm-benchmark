@@ -1,0 +1,12 @@
+schema_version: "1.0"
+
+options:
+  seed: 42
+  option_permutations: 1
+
+conditions:
+  - name: full_video
+    input_channel: visual
+    visual_view: full
+    doses: [0]
+    description: Projector training uses only full-video frozen-encoder features; no oracle clues or evaluation ablations.

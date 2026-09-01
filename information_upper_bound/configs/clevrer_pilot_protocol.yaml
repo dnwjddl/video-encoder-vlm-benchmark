@@ -1,0 +1,108 @@
+schema_version: "1.0"
+name: clevrer-500-scene-information-upper-bound-pilot
+
+pilot:
+  selection_unit: diagnostic.resampling_unit_id
+  target_resampling_units: 500
+  selection_seed: 42
+  answer_blind: true
+  preserve_complete_units: true
+
+model:
+  llm_id: Qwen/Qwen2.5-7B-Instruct
+  llm_revision: a09a35458c702b33eeacc393d103063234e8bc28
+  visual_encoder_name: internvideo2-clip-s
+  visual_encoder_id: OpenGVLab/InternVideo2_CLIP_S
+  visual_encoder_revision: 1f9fca1389fd883defc652634d95a21121c85a8c
+  llm_frozen: true
+  visual_encoder_frozen: true
+  projector_frozen_during_evaluation: true
+  dtype: bf16
+  max_length: 4096
+  overflow_policy: error
+
+data:
+  # Replace these two values from the NEW 500-scene adapter report/data lock.
+  # The existing 5,000-scene run/release identities must not be reused here.
+  data_release_sha256: REPLACE_WITH_CLEVRER_PILOT_DATA_RELEASE_SHA256
+  conditions_sha256: 4bee0be6b8358014e6106ee3c9cfe54ed7da3ebb6515d6663e9c1bca33913b9b
+  required_datasets: [clevrer]
+  coverage_contract:
+    schema_version: information_upper_bound.coverage_contract.v1
+    datasets:
+      clevrer:
+        required_adapter_runs: 1
+        required_adapter_run_ids:
+          - REPLACE_WITH_CLEVRER_PILOT_ADAPTER_RUN_ID
+        required_splits: [validation]
+        required_information_families: [causal_compositional]
+        required_question_families:
+          - clevrer:explanatory
+          - clevrer:predictive
+          - clevrer:counterfactual
+        exact_question_family_set: true
+        required_source_roles: [annotations, scene_annotations]
+        minimum_records: 500
+        minimum_records_with_evidence: 0
+        minimum_records_with_safe_oracles: 500
+
+# Replace only this late-bound section after strict projector training emits
+# protocol_projector_lock.json.
+projector:
+  checkpoint_sha256: REPLACE_WITH_PROJECTOR_CHECKPOINT_SHA256
+  metadata_sha256: REPLACE_WITH_PROJECTOR_METADATA_SHA256
+  training_manifest_sha256: REPLACE_WITH_TRAINING_MANIFEST_SHA256
+  training_data_release_sha256: REPLACE_WITH_TRAINING_DATA_RELEASE_SHA256
+  evaluation_manifest_sha256: REPLACE_WITH_EVALUATION_MANIFEST_SHA256
+  training_feature_index_sha256: REPLACE_WITH_TRAINING_FEATURE_INDEX_SHA256
+  training_feature_metadata_sha256: REPLACE_WITH_TRAINING_FEATURE_METADATA_SHA256
+  training_feature_artifact_root_sha256: REPLACE_WITH_TRAINING_FEATURE_ROOT_SHA256
+  evaluation_feature_index_sha256: REPLACE_WITH_EVALUATION_FEATURE_INDEX_SHA256
+  evaluation_feature_metadata_sha256: REPLACE_WITH_EVALUATION_FEATURE_METADATA_SHA256
+  evaluation_feature_artifact_root_sha256: REPLACE_WITH_EVALUATION_FEATURE_ROOT_SHA256
+  evaluation_trial_matrix_closure_sha256: REPLACE_WITH_EVALUATION_TRIAL_MATRIX_CLOSURE_SHA256
+  evaluation_trial_set_root_sha256: REPLACE_WITH_EVALUATION_TRIAL_SET_ROOT_SHA256
+  evaluation_trial_count: REPLACE_WITH_EVALUATION_TRIAL_COUNT
+  encoder_extraction_pipeline_identity_sha256: REPLACE_WITH_ENCODER_PIPELINE_SHA256
+  llm_pretrained_identity_sha256: REPLACE_WITH_TRAINING_LLM_IDENTITY_SHA256
+  training_dtype: bf16
+  training_max_length: 4096
+  training_seed: 42
+
+sampling:
+  seed: 42
+  option_permutations: all
+  trial_shards: 1
+  require_media_sha256: true
+  require_strong_encoder_identity: true
+  match_frame_budget_across_views: true
+
+analysis:
+  reference_condition: full_video
+  cluster_key_priority: [resampling_unit_id, pair_id, independent_unit_id, base_id]
+  minimum_confirmatory_resampling_units: 100
+  bootstrap_replicates: 10000
+  confidence_level: 0.95
+  seed: 20250308
+  ece_bins: 10
+  report_incomplete_groups: true
+
+confirmatory_comparisons:
+  - [full_video, question_only]
+  - [full_video, single_frame]
+  - [full_video, shuffled_frames]
+  - [full_video, reversed_frames]
+  - [atomic_oracle, question_only]
+  - [ordered_oracle, atomic_oracle]
+  - [ordered_oracle, ordered_timestamp_sham]
+  - [ordered_timestamp_sham, atomic_oracle]
+  - [reasoning_oracle, ordered_oracle]
+  - [reasoning_oracle, reasoning_operator_sham]
+  - [reasoning_operator_sham, ordered_oracle]
+  - [video_plus_ordered_oracle, full_video]
+  - [video_plus_reasoning_oracle, video_plus_ordered_oracle]
+
+dataset_roles:
+  clevrer:
+    information_families: [causal_compositional]
+    primary_use: Exact simulator state, temporal order, causal and counterfactual programs.

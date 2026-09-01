@@ -76,6 +76,7 @@ information_upper_bound/
     encoders.yaml        visual-encoder registry
     conditions.yaml      input interventions and clue-dose grid
     protocol.yaml        locked model/statistical protocol
+    clevrer_*.yaml       pinned 500-scene pilot/eval/train configurations
     exclusions/          audited known official-annotation defects
   tests/                 contract and metric tests; no benchmark claims
   schema.py              versioned diagnostic manifest contract
@@ -85,6 +86,8 @@ information_upper_bound/
   trial_matrix.py        external-memory full condition-matrix replay/closure
   integrity.py           model, tensor, feature, trial-set, and result digests
   split_integrity.py     projector train/evaluation unit and media-byte audit
+  unit_sampling.py       answer-blind, whole-resampling-unit pilot selection
+  pilot_protocol.py      authenticated CLEVRER pilot protocol finalization
   conditions.py          trial matrix and option counterbalancing
   protocol.py            locked-protocol loading and frozen-model checks
   media.py               timestamp-aware view sampling and decoding
@@ -301,6 +304,159 @@ there is deliberately no `score --development` switch. Do not mix development
 artifacts into a result bundle or interpret a development report as benchmark
 evidence.
 
+### CLEVRER 500-scene pilot quick path
+
+Use this path before attempting the seven-dataset protocol. It is a real-data,
+strictly locked pilot, not a toy run and not an estimate for all 5,000 validation
+scenes. The adapter first validates the complete official split, then ranks only
+`diagnostic.resampling_unit_id` with SHA256 and retains every row belonging to
+the selected scenes. Questions, choices, answers, and oracle content never enter
+the ranking. The report records the full population, selected IDs, unit row
+counts, and portable digests; `lock-data` independently replays the rank and
+checks whole-scene closure.
+
+The registered design uses 500 validation scenes for evaluation and 2,000
+disjoint train scenes for projector fitting. Run from the repository root after
+setting the six official-data variables (`*_Q`, `*_VIDEO`, and `*_SCENE`) to the
+actual train/validation paths:
+
+```bash
+export IUB_CLEV_TRAIN_SCENE=/absolute/path/to/CLEVRER/train/processed_proposals
+test -d "$IUB_CLEV_TRAIN_SCENE" && echo "train scene annotations OK"
+
+mkdir -p data/information_upper_bound/clevrer_pilot
+
+information-upper-bound adapt \
+  --dataset clevrer \
+  --annotations "$IUB_CLEV_VAL_Q" \
+  --media-root "$IUB_CLEV_VAL_VIDEO" \
+  --scene-annotations "$IUB_CLEV_VAL_SCENE" \
+  --output data/information_upper_bound/clevrer_pilot/validation_500.jsonl \
+  --split validation \
+  --source-split validation \
+  --resampling-unit-sample-size 500 \
+  --resampling-unit-sample-seed 42
+
+information-upper-bound adapt \
+  --dataset clevrer \
+  --annotations "$IUB_CLEV_TRAIN_Q" \
+  --media-root "$IUB_CLEV_TRAIN_VIDEO" \
+  --scene-annotations "$IUB_CLEV_TRAIN_SCENE" \
+  --output data/information_upper_bound/clevrer_pilot/train_2000.jsonl \
+  --split train \
+  --source-split train \
+  --resampling-unit-sample-size 2000 \
+  --resampling-unit-sample-seed 42
+```
+
+Do not substitute `--limit`: it selects rows rather than complete scenes and is
+intentionally ineligible for a data lock. The existing full-validation
+`adapter_run_id` and `data_release_sha256` also cannot identify this subset.
+Create new evaluation and training locks. The evaluation protocol preparer
+checks that its population is exactly scenes 10000--14999 with 70,862 retained
+candidate rows; the projector trainer checks that the train population is
+exactly scenes 0--9999 with 141,211 rows. It then verifies and copies the two
+evaluation identities into a separate protocol file:
+
+```bash
+information-upper-bound lock-data \
+  --manifest data/information_upper_bound/clevrer_pilot/validation_500.jsonl \
+  --adapter-report data/information_upper_bound/clevrer_pilot/validation_500.jsonl.report.json \
+  --out data/information_upper_bound/clevrer_pilot/validation_500.lock.json
+
+information-upper-bound lock-data \
+  --manifest data/information_upper_bound/clevrer_pilot/train_2000.jsonl \
+  --adapter-report data/information_upper_bound/clevrer_pilot/train_2000.jsonl.report.json \
+  --out data/information_upper_bound/clevrer_pilot/train_2000.lock.json
+
+information-upper-bound prepare-clevrer-pilot-protocol \
+  --manifest data/information_upper_bound/clevrer_pilot/validation_500.jsonl \
+  --adapter-report data/information_upper_bound/clevrer_pilot/validation_500.jsonl.report.json \
+  --data-lock data/information_upper_bound/clevrer_pilot/validation_500.lock.json \
+  --out data/information_upper_bound/clevrer_pilot/protocol.yaml
+```
+
+Build the complete strict evaluation matrix with all answer positions, and a
+separate one-permutation `full_video` development matrix for projector training:
+
+```bash
+information-upper-bound build-trials \
+  --manifest data/information_upper_bound/clevrer_pilot/validation_500.jsonl \
+  --data-lock data/information_upper_bound/clevrer_pilot/validation_500.lock.json \
+  --config information_upper_bound/configs/clevrer_core_conditions.yaml \
+  --protocol-config data/information_upper_bound/clevrer_pilot/protocol.yaml \
+  --out data/information_upper_bound/clevrer_pilot/validation_500.trials.jsonl.gz
+
+information-upper-bound build-trials \
+  --development \
+  --manifest data/information_upper_bound/clevrer_pilot/train_2000.jsonl \
+  --data-lock data/information_upper_bound/clevrer_pilot/train_2000.lock.json \
+  --config information_upper_bound/configs/clevrer_projector_train_conditions.yaml \
+  --protocol-config information_upper_bound/configs/clevrer_projector_train_protocol.yaml \
+  --out data/information_upper_bound/clevrer_pilot/train_2000.full_video.trials.jsonl.gz
+```
+
+Extract both bundles with the same pinned encoder snapshot and explicit decoder.
+The protocol and encoder registry both pin InternVideo2-CLIP-S commit
+`1f9fca1389fd883defc652634d95a21121c85a8c`; a conflicting override is rejected.
+
+```bash
+CUDA_VISIBLE_DEVICES=0 information-upper-bound extract \
+  --manifest data/information_upper_bound/clevrer_pilot/validation_500.trials.jsonl.gz \
+  --data-lock data/information_upper_bound/clevrer_pilot/validation_500.lock.json \
+  --encoder internvideo2-clip-s \
+  --encoder-config information_upper_bound/configs/clevrer_encoder.yaml \
+  --conditions-config information_upper_bound/configs/clevrer_core_conditions.yaml \
+  --protocol-config data/information_upper_bound/clevrer_pilot/protocol.yaml \
+  --out-dir features/information_upper_bound/clevrer_pilot/eval \
+  --device cuda --dtype bf16 --backend decord --media-sha256
+
+CUDA_VISIBLE_DEVICES=0 information-upper-bound extract \
+  --development \
+  --manifest data/information_upper_bound/clevrer_pilot/train_2000.full_video.trials.jsonl.gz \
+  --data-lock data/information_upper_bound/clevrer_pilot/train_2000.lock.json \
+  --encoder internvideo2-clip-s \
+  --encoder-config information_upper_bound/configs/clevrer_encoder.yaml \
+  --conditions-config information_upper_bound/configs/clevrer_projector_train_conditions.yaml \
+  --protocol-config information_upper_bound/configs/clevrer_projector_train_protocol.yaml \
+  --out-dir features/information_upper_bound/clevrer_pilot/train \
+  --device cuda --dtype bf16 --backend decord --media-sha256
+```
+
+Train only the projector. The LLM and visual encoder remain frozen, and the
+trainer proves the train/evaluation units and media bytes are disjoint. It pins
+Qwen commit `a09a35458c702b33eeacc393d103063234e8bc28`:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 information-upper-bound-train-projector \
+  --manifest data/information_upper_bound/clevrer_pilot/train_2000.full_video.trials.jsonl.gz \
+  --feature-index features/information_upper_bound/clevrer_pilot/train/index.jsonl \
+  --feature-metadata features/information_upper_bound/clevrer_pilot/train/metadata.json \
+  --eval-manifest data/information_upper_bound/clevrer_pilot/validation_500.trials.jsonl.gz \
+  --eval-feature-index features/information_upper_bound/clevrer_pilot/eval/index.jsonl \
+  --eval-feature-metadata features/information_upper_bound/clevrer_pilot/eval/metadata.json \
+  --eval-data-lock data/information_upper_bound/clevrer_pilot/validation_500.lock.json \
+  --train-data-lock data/information_upper_bound/clevrer_pilot/train_2000.lock.json \
+  --train-conditions-config information_upper_bound/configs/clevrer_projector_train_conditions.yaml \
+  --train-protocol-config information_upper_bound/configs/clevrer_projector_train_protocol.yaml \
+  --conditions-config information_upper_bound/configs/clevrer_core_conditions.yaml \
+  --protocol-config data/information_upper_bound/clevrer_pilot/protocol.yaml \
+  --out-dir checkpoints/projectors/information_upper_bound/clevrer_pilot/run-001 \
+  --encoder-name internvideo2-clip-s \
+  --llm-id Qwen/Qwen2.5-7B-Instruct \
+  --llm-revision a09a35458c702b33eeacc393d103063234e8bc28 \
+  --dtype bf16 --max-length 4096 --seed 42 \
+  --batch-size 1 --grad-accum 16 --epochs 1
+```
+
+Copy the exact fields from the final checkpoint's
+`protocol_projector_lock.json` into only the `projector` section of the generated
+pilot protocol, then follow steps 7 and 8 below to score and analyze. Never guess
+the final `step_*` directory. The core matrix has at most 33 condition-dose
+cells per binary base row and two answer-position permutations: roughly 468k
+trials for 500 scenes. Scoring, rather than feature extraction, is therefore the
+main runtime cost.
+
 ### 1. Convert one or more official releases
 
 The `adapt --help` command lists dataset-specific required paths. A typical run
@@ -342,7 +498,12 @@ coverage.
 false for `--limit`, missing-media/grounding/cut escape hatches, missing required
 sidecars, a single-task TVBench build, or an MVP build without one explicit
 official category. A malformed or ambiguous official row is an error; adapters
-do not silently drop it. `--dry-run` prints an audit summary but writes no
+do not silently drop it. An explicit `--resampling-unit-sample-size` plus seed
+is the one subset exception: the complete post-exclusion population is first
+validated, selection is answer-blind and closes over whole scientific units,
+and the population/selection identities are authenticated by `lock-data`. Such
+an output must still be labeled as the registered pilot rather than the full
+benchmark. `--dry-run` prints an audit summary but writes no
 manifest/report, so it cannot be passed to `lock-data`.
 
 If an official release has a known bad row, make that decision explicit with an
@@ -653,8 +814,13 @@ confirmatory projector lock. Strict training refuses a non-empty output
 directory unless `--overwrite` is explicit; use a dedicated run directory so
 old checkpoints cannot be mistaken for the current run.
 
+The registered CLEVRER pilot additionally requires `--train-data-lock`. This
+authenticates the complete selected training trial base IDs/media against the
+2,000-scene adapter report and proves that selection came from the official
+10,000-scene train population before the split-disjointness audit runs.
+
 Each saved checkpoint directory contains `protocol_projector_lock.json`. Copy
-its checkpoint/metadata, train/evaluation manifest, **both** train/evaluation
+its checkpoint/metadata, training data-release (when present), train/evaluation manifest, **both** train/evaluation
 feature-index, feature-metadata, and artifact-root hashes, encoder-pipeline,
 full evaluation matrix closure/root/count, training-LLM, dtype, maximum-length,
 and seed fields into the protocol's

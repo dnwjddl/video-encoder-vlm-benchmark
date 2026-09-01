@@ -1,0 +1,106 @@
+schema_version: "1.0"
+
+options:
+  seed: 42
+  option_permutations: all
+
+conditions:
+  - name: question_only
+    input_channel: question_only
+    visual_view: none
+    doses: [0]
+    description: Language-prior control; neither pixels nor oracle facts are supplied.
+
+  - name: full_video
+    input_channel: visual
+    visual_view: full
+    doses: [0]
+    description: Frozen encoder and projector on the uniformly sampled full video.
+
+  - name: single_frame
+    input_channel: visual
+    visual_view: single
+    doses: [0]
+    description: Repeated midpoint frame; controls for static appearance shortcuts.
+
+  - name: shuffled_frames
+    input_channel: visual
+    visual_view: shuffle
+    doses: [0]
+    description: Identical sampled frames in deterministic random order.
+
+  - name: reversed_frames
+    input_channel: visual
+    visual_view: reverse
+    doses: [0]
+    description: Identical sampled frames in reverse temporal order.
+
+  - name: atomic_oracle
+    input_channel: text_oracle
+    visual_view: none
+    clue_fields: [unordered_events]
+    matched_event_view: atomic
+    requires_matched_events: true
+    doses: [1, 2, 4, all]
+    description: The same ID-matched events as ordered_oracle, with timestamps and temporal ordering removed.
+
+  - name: ordered_timestamp_sham
+    input_channel: text_oracle
+    visual_view: none
+    clue_fields: [ordered_events]
+    matched_event_view: timestamp_sham
+    requires_matched_events: true
+    doses: [1, 2, 4, all]
+    description: The same event IDs and semantics with fixed neutral timestamp-shaped prefixes in answer-independent hash order.
+
+  - name: ordered_oracle
+    input_channel: text_oracle
+    visual_view: none
+    clue_fields: [ordered_events]
+    matched_event_view: ordered
+    requires_matched_events: true
+    doses: [1, 2, 4, all]
+    description: Exactly the atomic_oracle event IDs and semantics, now rendered with timestamps and temporal order.
+
+  - name: reasoning_oracle
+    input_channel: text_oracle
+    visual_view: none
+    clue_fields: [ordered_events, operator]
+    always_include_fields: [operator]
+    required_fields: [operator]
+    matched_event_view: ordered
+    requires_matched_events: true
+    doses: [1, 2, 4, all]
+    description: Exactly the ordered_oracle facts plus one declared answer-independent task operator.
+
+  - name: reasoning_operator_sham
+    input_channel: text_oracle
+    visual_view: none
+    clue_fields: [ordered_events, operator]
+    always_include_fields: [operator]
+    required_fields: [operator]
+    sham_fields: [operator]
+    matched_event_view: ordered
+    requires_matched_events: true
+    doses: [1, 2, 4, all]
+    description: Exactly the reasoning_oracle event facts plus an exact-character-layout lexical sham in place of the operator.
+
+  - name: video_plus_ordered_oracle
+    input_channel: visual_plus_text
+    visual_view: full
+    clue_fields: [ordered_events]
+    matched_event_view: ordered
+    requires_matched_events: true
+    doses: [1, 2, 4, all]
+    description: Tests whether explicit structured facts add information beyond encoder tokens.
+
+  - name: video_plus_reasoning_oracle
+    input_channel: visual_plus_text
+    visual_view: full
+    clue_fields: [ordered_events, operator]
+    always_include_fields: [operator]
+    required_fields: [operator]
+    matched_event_view: ordered
+    requires_matched_events: true
+    doses: [1, 2, 4, all]
+    description: Approximates the frozen VideoLLM ceiling under facts and reasoning scaffolds.

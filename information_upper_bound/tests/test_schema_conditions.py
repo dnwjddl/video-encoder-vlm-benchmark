@@ -11,6 +11,7 @@ from information_upper_bound.conditions import (
     render_clue,
 )
 from information_upper_bound.cli import _parse_option_permutations
+from information_upper_bound.io import sha256_file
 from information_upper_bound.schema import (
     SCHEMA_VERSION,
     normalize_answer,
@@ -184,6 +185,37 @@ class SchemaTests(unittest.TestCase):
 
 
 class ConditionTests(unittest.TestCase):
+    def test_clevrer_pilot_configs_have_registered_core_grid(self) -> None:
+        config_root = Path(__file__).parents[1] / "configs"
+        core_path = config_root / "clevrer_core_conditions.yaml"
+        train_path = config_root / "clevrer_projector_train_conditions.yaml"
+        core_specs, core_options = load_condition_config(core_path)
+        train_specs, train_options = load_condition_config(train_path)
+        self.assertEqual(
+            [spec.name for spec in core_specs],
+            [
+                "question_only",
+                "full_video",
+                "single_frame",
+                "shuffled_frames",
+                "reversed_frames",
+                "atomic_oracle",
+                "ordered_timestamp_sham",
+                "ordered_oracle",
+                "reasoning_oracle",
+                "reasoning_operator_sham",
+                "video_plus_ordered_oracle",
+                "video_plus_reasoning_oracle",
+            ],
+        )
+        self.assertEqual(core_options, {"seed": 42, "option_permutations": "all"})
+        self.assertEqual([spec.name for spec in train_specs], ["full_video"])
+        self.assertEqual(train_options, {"seed": 42, "option_permutations": 1})
+        self.assertEqual(
+            sha256_file(core_path),
+            "4bee0be6b8358014e6106ee3c9cfe54ed7da3ebb6515d6663e9c1bca33913b9b",
+        )
+
     def test_unknown_clue_field_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported clue fields"):
             ConditionSpec(

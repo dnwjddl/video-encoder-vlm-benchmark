@@ -16,9 +16,20 @@ from information_upper_bound.data_lock import (
     validate_data_lock,
     validate_trial_media_lock,
 )
+from information_upper_bound.attestation import TRIAL_BUILD_ATTESTATION_SCHEMA_VERSION
+from information_upper_bound.conditions import (
+    ConditionSpec,
+    build_trials,
+    trial_content_sha256,
+)
 from information_upper_bound.integrity import canonical_sha256
 from information_upper_bound.io import sha256_file, write_json, write_jsonl
+from information_upper_bound.protocol import trial_build_protocol_sha256
 from information_upper_bound.schema import SCHEMA_VERSION
+from information_upper_bound.trial_matrix import (
+    validate_development_trial_matrix_closure,
+    validate_trial_base_release,
+)
 from information_upper_bound.validate import validate_manifest
 
 
@@ -393,6 +404,156 @@ class DataLockTests(unittest.TestCase):
             media_by_id["row-b"].write_bytes(b"mutated-after-lock")
             with self.assertRaisesRegex(ValueError, "trial media bytes"):
                 validate_trial_media_lock(lock_path, trials)
+
+    def test_training_trials_authenticate_full_reconstructed_base_release(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, reports, _media, rows = self._release(
+                root, run_rows=[["row-a", "row-b"]]
+            )
+            lock = create_data_lock(
+                manifest_path=manifest, adapter_report_paths=reports
+            )
+            lock_path = root / "data_lock.json"
+            write_json(lock_path, lock)
+            trials, _report = build_trials(
+                rows,
+                [
+                    ConditionSpec(
+                        name="full_video",
+                        input_channel="visual",
+                        visual_view="full",
+                        doses=(0,),
+                    )
+                ],
+                seed=42,
+                option_permutations=1,
+            )
+
+            verified = validate_trial_base_release(trials, data_lock_path=lock_path)
+            self.assertEqual(
+                verified["manifest_semantic_record_set_sha256"],
+                lock["manifest_semantic_record_set_sha256"],
+            )
+            self.assertEqual(verified["unit_summaries"], lock["unit_summaries"])
+
+            changed_question = deepcopy(trials)
+            changed_question[0]["question"] = "A substituted training question"
+            with self.assertRaisesRegex(ValueError, "semantic record content"):
+                validate_trial_base_release(changed_question, data_lock_path=lock_path)
+
+            changed_membership = deepcopy(trials)
+            changed_membership[0]["diagnostic"]["resampling_unit_id"] = (
+                "substituted-unit"
+            )
+            with self.assertRaisesRegex(ValueError, "semantic record content"):
+                validate_trial_base_release(
+                    changed_membership, data_lock_path=lock_path
+                )
+
+    def test_development_training_matrix_has_exact_condition_closure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, reports, _media, rows = self._release(
+                root, run_rows=[["row-a", "row-b"]]
+            )
+            lock = create_data_lock(
+                manifest_path=manifest, adapter_report_paths=reports
+            )
+            lock_path = root / "data_lock.json"
+            write_json(lock_path, lock)
+            conditions_path = root / "train_conditions.yaml"
+            write_json(
+                conditions_path,
+                {
+                    "schema_version": "1.0",
+                    "options": {"seed": 42, "option_permutations": 1},
+                    "conditions": [
+                        {
+                            "name": "full_video",
+                            "input_channel": "visual",
+                            "visual_view": "full",
+                            "doses": [0],
+                        }
+                    ],
+                },
+            )
+            protocol = {
+                "schema_version": "1.0",
+                "name": "training-closure-test",
+                "sampling": {
+                    "seed": 42,
+                    "option_permutations": 1,
+                    "trial_shards": 1,
+                },
+            }
+            attestation_payload = {
+                "schema_version": TRIAL_BUILD_ATTESTATION_SCHEMA_VERSION,
+                "mode": "development",
+                "data_release_sha256": lock["data_release_sha256"],
+                "condition_config_sha256": sha256_file(conditions_path),
+                "trial_build_protocol_sha256": trial_build_protocol_sha256(protocol),
+                "sampling": dict(protocol["sampling"]),
+            }
+            attestation = {
+                **attestation_payload,
+                "attestation_sha256": canonical_sha256(attestation_payload),
+            }
+            trial_inputs = [
+                {
+                    **row,
+                    "data_release_sha256": lock["data_release_sha256"],
+                    "trial_build_attestation": deepcopy(attestation),
+                }
+                for row in rows
+            ]
+            trials, _report = build_trials(
+                trial_inputs,
+                [
+                    ConditionSpec(
+                        name="full_video",
+                        input_channel="visual",
+                        visual_view="full",
+                        doses=(0,),
+                    )
+                ],
+                seed=42,
+                option_permutations=1,
+            )
+            authenticated = validate_development_trial_matrix_closure(
+                trials,
+                data_lock_path=lock_path,
+                conditions_config_path=conditions_path,
+                protocol=protocol,
+            )
+            closure = authenticated["closure"]
+            self.assertEqual(closure["status"], "exact")
+            self.assertEqual(closure["conditions"], ["full_video"])
+            self.assertEqual(closure["trial_count"], len(rows))
+
+            duplicated = [*trials, deepcopy(trials[0])]
+            with self.assertRaisesRegex(ValueError, "duplicates trial_id"):
+                validate_development_trial_matrix_closure(
+                    duplicated,
+                    data_lock_path=lock_path,
+                    conditions_config_path=conditions_path,
+                    protocol=protocol,
+                )
+
+            substituted_view = deepcopy(trials)
+            substituted_view[0]["condition"]["visual_view"] = "single"
+            substituted_view[0]["visual_spec"]["view"] = "single"
+            changed_digest = trial_content_sha256(substituted_view[0])
+            substituted_view[0]["trial_content_sha256"] = changed_digest
+            substituted_view[0]["trial_id"] = f"trial::{changed_digest}"
+            substituted_view[0]["id"] = f"trial::{changed_digest}"
+            with self.assertRaisesRegex(ValueError, "exact deterministic"):
+                validate_development_trial_matrix_closure(
+                    substituted_view,
+                    data_lock_path=lock_path,
+                    conditions_config_path=conditions_path,
+                    protocol=protocol,
+                )
 
     def test_lock_data_output_cannot_alias_an_input(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

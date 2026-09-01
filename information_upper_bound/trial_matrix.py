@@ -26,15 +26,19 @@ from .conditions import (
 )
 from .data_lock import (
     manifest_semantic_record_set_sha256,
+    validate_data_lock,
     validate_trial_media_lock,
 )
 from .integrity import TRIAL_SET_SCHEMA_VERSION, canonical_sha256
-from .io import iter_jsonl, sha256_file
+from .io import iter_jsonl, sha256_file, write_jsonl
 from .protocol import protocol_section
 from .schema import normalize_answer, option_label
 
 
 TRIAL_MATRIX_CLOSURE_SCHEMA_VERSION = "information_upper_bound.trial_matrix_closure.v1"
+DEVELOPMENT_TRIAL_MATRIX_CLOSURE_SCHEMA_VERSION = (
+    "information_upper_bound.development_trial_matrix_closure.v1"
+)
 BASE_ID_SET_SCHEMA_VERSION = "information_upper_bound.base_id_set.v1"
 
 # These names are written by build-trials and therefore may not already exist
@@ -243,6 +247,225 @@ def reconstruct_base_records(
     if row_count == 0:
         raise ValueError("trial-matrix closure requires a non-empty trial manifest")
     return [by_base[base_id][1] for base_id in sorted(by_base)]
+
+
+def validate_trial_base_release(
+    trial_rows_or_manifest: Iterable[Mapping[str, Any]] | str | Path,
+    *,
+    data_lock_path: str | Path,
+) -> dict[str, Any]:
+    """Authenticate every reconstructed base field against a data lock.
+
+    Development training trials do not carry the confirmatory attestation
+    needed for full trial-matrix closure.  They still contain an invertible
+    copy of each base record, so reconstruct that exact base manifest and run
+    the normal data-lock validator over it.  This binds questions, choices,
+    answers, diagnostics, resampling-unit membership, and media bytes rather
+    than checking only base IDs and media paths.
+    """
+
+    base_records = reconstruct_base_records(trial_rows_or_manifest)
+    return _validate_reconstructed_base_release(
+        base_records, data_lock_path=data_lock_path
+    )
+
+
+def _validate_reconstructed_base_release(
+    base_records: list[dict[str, Any]], *, data_lock_path: str | Path
+) -> dict[str, Any]:
+    with tempfile.TemporaryDirectory(
+        prefix="information-upper-bound-base-release-"
+    ) as directory:
+        manifest_path = Path(directory) / "reconstructed-base.jsonl"
+        write_jsonl(manifest_path, base_records)
+        return validate_data_lock(
+            data_lock_path,
+            manifest_path=manifest_path,
+            verify_sources=False,
+            verify_media=True,
+        )
+
+
+def _trial_set_identity_from_entries(entries: Mapping[str, str]) -> dict[str, Any]:
+    if not entries:
+        raise ValueError("cannot compute a trial-set identity for an empty manifest")
+    values = [
+        {"trial_id": trial_id, "trial_content_sha256": entries[trial_id]}
+        for trial_id in sorted(entries)
+    ]
+    return {
+        "schema_version": TRIAL_SET_SCHEMA_VERSION,
+        "trial_count": len(values),
+        "root_sha256": canonical_sha256(
+            {"schema_version": TRIAL_SET_SCHEMA_VERSION, "entries": values}
+        ),
+    }
+
+
+def validate_development_trial_matrix_closure(
+    trial_rows_or_manifest: Iterable[Mapping[str, Any]] | str | Path,
+    *,
+    data_lock_path: str | Path,
+    conditions_config_path: str | Path,
+    protocol: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Authenticate and exactly regenerate a locked development trial matrix.
+
+    This is the training counterpart to confirmatory closure.  It requires a
+    development attestation, an exact locked base release, and one unsharded
+    deterministic expansion from the supplied condition and protocol files.
+    """
+
+    if isinstance(trial_rows_or_manifest, (str, Path)):
+        source: Iterable[Mapping[str, Any]] | str | Path = trial_rows_or_manifest
+    else:
+        source = [dict(row) for row in _iter_rows(trial_rows_or_manifest)]
+    base_records = reconstruct_base_records(source)
+    data_lock = _validate_reconstructed_base_release(
+        base_records, data_lock_path=data_lock_path
+    )
+    locked_release = str(data_lock["data_release_sha256"])
+
+    conditions_sha256 = sha256_file(conditions_config_path)
+    specs, condition_options = load_condition_config(conditions_config_path)
+    sampling = protocol_section(protocol, "sampling")
+    try:
+        seed = int(sampling["seed"])
+        option_permutations = _normalized_option_permutations(
+            sampling["option_permutations"]
+        )
+        trial_shards = int(sampling["trial_shards"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(
+            "development trial protocol has invalid sampling fields"
+        ) from exc
+    if trial_shards != 1:
+        raise ValueError("development trial-matrix closure requires trial_shards=1")
+    if "seed" in condition_options and int(condition_options["seed"]) != seed:
+        raise ValueError("development condition seed differs from its protocol")
+    if "option_permutations" in condition_options and (
+        _normalized_option_permutations(condition_options["option_permutations"])
+        != option_permutations
+    ):
+        raise ValueError(
+            "development condition option_permutations differs from its protocol"
+        )
+
+    actual_entries: dict[str, str] = {}
+    common_attestation: dict[str, Any] | None = None
+    common_attestation_canonical: str | None = None
+    validated_attestation: dict[str, Any] | None = None
+    for index, row in enumerate(_iter_rows(source)):
+        trial_id, content_sha256 = _validated_trial_identity(
+            row, label="development training", index=index
+        )
+        if trial_id in actual_entries:
+            raise ValueError(
+                f"development training matrix duplicates trial_id {trial_id!r}"
+            )
+        actual_entries[trial_id] = content_sha256
+        raw_attestation = row.get("trial_build_attestation")
+        if common_attestation is None:
+            validated_attestation = validate_trial_build_attestation(
+                row, protocol=protocol, require_confirmatory=False
+            )
+            if validated_attestation.get("mode") != "development":
+                raise ValueError(
+                    "projector training trials must carry a development attestation"
+                )
+            if validated_attestation.get("data_release_sha256") != locked_release:
+                raise ValueError(
+                    "development training trials name a different locked data release"
+                )
+            if (
+                str(validated_attestation.get("condition_config_sha256", "")).lower()
+                != conditions_sha256
+            ):
+                raise ValueError(
+                    "development training trials use a different condition config"
+                )
+            if not isinstance(raw_attestation, Mapping):
+                raise ValueError("trial has no trial_build_attestation object")
+            common_attestation = deepcopy(dict(raw_attestation))
+            common_attestation_canonical = _canonical_json(common_attestation)
+        elif _canonical_json(raw_attestation) != common_attestation_canonical:
+            raise ValueError(
+                "development training matrix has mixed trial-build attestations"
+            )
+    if (
+        not actual_entries
+        or common_attestation is None
+        or validated_attestation is None
+    ):
+        raise ValueError(
+            "development trial-matrix closure requires a non-empty manifest"
+        )
+
+    regenerated_inputs = [
+        {
+            **base,
+            "data_release_sha256": locked_release,
+            "trial_build_attestation": deepcopy(common_attestation),
+        }
+        for base in base_records
+    ]
+    regenerated, _state = stream_trials(
+        regenerated_inputs,
+        specs,
+        seed=seed,
+        option_permutations=option_permutations,
+    )
+    expected_entries: dict[str, str] = {}
+    for index, row in enumerate(regenerated):
+        trial_id, content_sha256 = _validated_trial_identity(
+            row, label="regenerated development training", index=index
+        )
+        if trial_id in expected_entries:
+            raise ValueError(
+                f"regenerated development matrix duplicates trial_id {trial_id!r}"
+            )
+        expected_entries[trial_id] = content_sha256
+    if actual_entries != expected_entries:
+        actual_ids = set(actual_entries)
+        expected_ids = set(expected_entries)
+        raise ValueError(
+            "development training matrix is not the exact deterministic condition "
+            "expansion; "
+            f"missing={sorted(expected_ids - actual_ids)[:10]}, "
+            f"extra={sorted(actual_ids - expected_ids)[:10]}"
+        )
+
+    identity = _trial_set_identity_from_entries(actual_entries)
+    closure_payload = {
+        "schema_version": DEVELOPMENT_TRIAL_MATRIX_CLOSURE_SCHEMA_VERSION,
+        "status": "exact",
+        "mode": "development",
+        "data_release_sha256": locked_release,
+        "conditions_sha256": conditions_sha256,
+        "trial_build_attestation_sha256": validated_attestation["attestation_sha256"],
+        "base_semantic_record_set_sha256": data_lock[
+            "manifest_semantic_record_set_sha256"
+        ],
+        "base_id_set_root_sha256": _base_id_set_root(
+            str(base["id"]) for base in base_records
+        ),
+        "base_records": len(base_records),
+        "conditions": [spec.name for spec in specs],
+        "trial_count": identity["trial_count"],
+        "trial_set_root_sha256": identity["root_sha256"],
+        "sampling": {
+            "seed": seed,
+            "option_permutations": option_permutations,
+            "trial_shards": trial_shards,
+        },
+    }
+    return {
+        "data_lock": data_lock,
+        "closure": {
+            **closure_payload,
+            "closure_sha256": canonical_sha256(closure_payload),
+        },
+    }
 
 
 def _load_data_lock(path: str | Path) -> dict[str, Any]:
@@ -559,10 +782,13 @@ def validate_trial_matrix_closure(
 
 __all__ = [
     "BASE_ID_SET_SCHEMA_VERSION",
+    "DEVELOPMENT_TRIAL_MATRIX_CLOSURE_SCHEMA_VERSION",
     "GENERATED_TRIAL_FIELDS",
     "TRIAL_BUILD_INJECTED_FIELDS",
     "TRIAL_EXPANSION_FIELDS",
     "TRIAL_MATRIX_CLOSURE_SCHEMA_VERSION",
     "reconstruct_base_records",
+    "validate_development_trial_matrix_closure",
+    "validate_trial_base_release",
     "validate_trial_matrix_closure",
 ]

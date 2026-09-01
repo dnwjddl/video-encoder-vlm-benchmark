@@ -15,13 +15,21 @@ from information_upper_bound.projector_training import (
     build_inputs_embeds_and_labels,
     collate_feature_text,
 )
+from information_upper_bound.clevrer_pilot_contract import (
+    validate_clevrer_selection_options,
+)
 from vlmevalbench.utils import get_dtype, save_json, set_seed
 from information_upper_bound.integrity import resolved_pretrained_identity
 from information_upper_bound.conditions import DEFAULT_CONDITION_PATH
 from information_upper_bound.io import iter_jsonl, sha256_file
 from information_upper_bound.protocol import DEFAULT_PROTOCOL_PATH, load_protocol
 from information_upper_bound.split_integrity import audit_projector_split_disjointness
-from information_upper_bound.trial_matrix import validate_trial_matrix_closure
+from information_upper_bound.trial_matrix import (
+    DEVELOPMENT_TRIAL_MATRIX_CLOSURE_SCHEMA_VERSION,
+    validate_development_trial_matrix_closure,
+    validate_trial_base_release,
+    validate_trial_matrix_closure,
+)
 
 
 STRICT_PROVENANCE_ARGUMENTS = (
@@ -32,6 +40,9 @@ STRICT_PROVENANCE_ARGUMENTS = (
     "eval_data_lock",
 )
 STRICT_PROJECTOR_LOCK_SCHEMA_VERSION = "information_upper_bound.projector_lock.v3"
+CLEVRER_PROJECTOR_TRAIN_CONDITIONS_SHA256 = (
+    "da7f1a51ee002be563b4ba2d67d5ffa14c45b768e1b7dceac70b98ca1caff697"
+)
 
 
 def env_flag(name: str, default: bool = False) -> bool:
@@ -98,6 +109,27 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "Strict mode: official release lock used to regenerate and authenticate "
             "the complete evaluation trial matrix."
+        ),
+    )
+    parser.add_argument(
+        "--train-data-lock",
+        help=(
+            "Strict mode: optional authenticated training-release lock. It is "
+            "required by the registered CLEVRER pilot protocol."
+        ),
+    )
+    parser.add_argument(
+        "--train-conditions-config",
+        help=(
+            "Strict mode: exact development condition matrix used to build the "
+            "projector-training manifest."
+        ),
+    )
+    parser.add_argument(
+        "--train-protocol-config",
+        help=(
+            "Strict mode: development protocol used to build the projector-training "
+            "manifest."
         ),
     )
     parser.add_argument(
@@ -184,6 +216,9 @@ def _validate_strict_output_directory(args: argparse.Namespace) -> None:
             args.eval_feature_index,
             args.eval_feature_metadata,
             args.eval_data_lock,
+            args.train_data_lock,
+            args.train_conditions_config,
+            args.train_protocol_config,
             args.conditions_config,
             args.protocol_config,
         )
@@ -355,60 +390,156 @@ def save_checkpoint(
     checkpoint_metadata = metadata | {"step": step}
     save_json(metadata_path, checkpoint_metadata)
     if metadata.get("projector_training_mode") == "information_upper_bound_strict":
-        save_json(
-            ckpt_dir / "protocol_projector_lock.json",
-            {
-                "schema_version": STRICT_PROJECTOR_LOCK_SCHEMA_VERSION,
-                "checkpoint_sha256": sha256_file(checkpoint_path),
-                "metadata_sha256": sha256_file(metadata_path),
-                "training_manifest_sha256": checkpoint_metadata[
-                    "training_manifest_sha256"
-                ],
-                "evaluation_manifest_sha256": checkpoint_metadata[
-                    "evaluation_manifest_sha256"
-                ],
-                "training_feature_index_sha256": checkpoint_metadata[
-                    "training_feature_index_sha256"
-                ],
-                "training_feature_artifact_root_sha256": checkpoint_metadata[
-                    "training_feature_artifact_root_sha256"
-                ],
-                "training_feature_metadata_sha256": checkpoint_metadata[
-                    "training_feature_metadata_sha256"
-                ],
-                "evaluation_feature_index_sha256": checkpoint_metadata[
-                    "evaluation_feature_index_sha256"
-                ],
-                "evaluation_feature_artifact_root_sha256": checkpoint_metadata[
-                    "evaluation_feature_artifact_root_sha256"
-                ],
-                "evaluation_feature_metadata_sha256": checkpoint_metadata[
-                    "evaluation_feature_metadata_sha256"
-                ],
-                "evaluation_trial_matrix_closure_sha256": checkpoint_metadata[
-                    "evaluation_trial_matrix_closure_sha256"
-                ],
-                "evaluation_trial_set_root_sha256": checkpoint_metadata[
-                    "evaluation_trial_set_root_sha256"
-                ],
-                "evaluation_trial_count": checkpoint_metadata["evaluation_trial_count"],
-                "encoder_extraction_pipeline_identity_sha256": checkpoint_metadata[
-                    "encoder_extraction_pipeline_identity_sha256"
-                ],
-                "llm_pretrained_identity_sha256": checkpoint_metadata[
-                    "llm_pretrained_identity_sha256"
-                ],
-                "training_dtype": checkpoint_metadata["dtype"],
-                "training_max_length": checkpoint_metadata["max_length"],
-                "training_seed": checkpoint_metadata["seed"],
-            },
+        projector_lock = {
+            "schema_version": STRICT_PROJECTOR_LOCK_SCHEMA_VERSION,
+            "checkpoint_sha256": sha256_file(checkpoint_path),
+            "metadata_sha256": sha256_file(metadata_path),
+            "training_manifest_sha256": checkpoint_metadata["training_manifest_sha256"],
+            "evaluation_manifest_sha256": checkpoint_metadata[
+                "evaluation_manifest_sha256"
+            ],
+            "training_feature_index_sha256": checkpoint_metadata[
+                "training_feature_index_sha256"
+            ],
+            "training_feature_artifact_root_sha256": checkpoint_metadata[
+                "training_feature_artifact_root_sha256"
+            ],
+            "training_feature_metadata_sha256": checkpoint_metadata[
+                "training_feature_metadata_sha256"
+            ],
+            "evaluation_feature_index_sha256": checkpoint_metadata[
+                "evaluation_feature_index_sha256"
+            ],
+            "evaluation_feature_artifact_root_sha256": checkpoint_metadata[
+                "evaluation_feature_artifact_root_sha256"
+            ],
+            "evaluation_feature_metadata_sha256": checkpoint_metadata[
+                "evaluation_feature_metadata_sha256"
+            ],
+            "evaluation_trial_matrix_closure_sha256": checkpoint_metadata[
+                "evaluation_trial_matrix_closure_sha256"
+            ],
+            "evaluation_trial_set_root_sha256": checkpoint_metadata[
+                "evaluation_trial_set_root_sha256"
+            ],
+            "evaluation_trial_count": checkpoint_metadata["evaluation_trial_count"],
+            "encoder_extraction_pipeline_identity_sha256": checkpoint_metadata[
+                "encoder_extraction_pipeline_identity_sha256"
+            ],
+            "llm_pretrained_identity_sha256": checkpoint_metadata[
+                "llm_pretrained_identity_sha256"
+            ],
+            "training_dtype": checkpoint_metadata["dtype"],
+            "training_max_length": checkpoint_metadata["max_length"],
+            "training_seed": checkpoint_metadata["seed"],
+        }
+        training_data_lock = checkpoint_metadata.get("training_data_lock")
+        if isinstance(training_data_lock, Mapping):
+            projector_lock["training_data_release_sha256"] = training_data_lock[
+                "data_release_sha256"
+            ]
+        save_json(ckpt_dir / "protocol_projector_lock.json", projector_lock)
+
+
+def _validate_registered_pilot_training_lock(
+    protocol: Mapping[str, Any],
+    training_data_lock: Mapping[str, Any] | None,
+    training_trial_matrix_closure: Mapping[str, Any] | None = None,
+) -> None:
+    if not isinstance(protocol.get("pilot"), Mapping):
+        return
+    if training_data_lock is None:
+        raise ValueError(
+            "registered pilot projector training requires --train-data-lock"
+        )
+    if training_data_lock.get("datasets") != {
+        "clevrer": training_data_lock.get("records")
+    }:
+        raise ValueError(
+            "registered pilot training lock must contain only CLEVRER records"
+        )
+    training_runs = training_data_lock.get("adapter_runs")
+    if not isinstance(training_runs, list) or len(training_runs) != 1:
+        raise ValueError("registered pilot training lock must contain one adapter run")
+    training_run = training_runs[0]
+    if (
+        not isinstance(training_run, Mapping)
+        or training_run.get("dataset") != "clevrer"
+        or training_run.get("canonical_split") != "train"
+    ):
+        raise ValueError(
+            "registered pilot training lock must bind the CLEVRER train split"
+        )
+    training_options = training_run.get("adapter_options")
+    selection_options = (
+        training_options.get("resampling_unit_selection")
+        if isinstance(training_options, Mapping)
+        else None
+    )
+    if not isinstance(selection_options, Mapping):
+        raise ValueError("registered pilot training lock has no unit-sampling contract")
+    validate_clevrer_selection_options(
+        selection_options,
+        role="train",
+        locked_record_count=int(training_data_lock["records"]),
+    )
+    expected_closure = {
+        "schema_version": DEVELOPMENT_TRIAL_MATRIX_CLOSURE_SCHEMA_VERSION,
+        "status": "exact",
+        "mode": "development",
+        "data_release_sha256": training_data_lock["data_release_sha256"],
+        "conditions_sha256": CLEVRER_PROJECTOR_TRAIN_CONDITIONS_SHA256,
+        "base_records": training_data_lock["records"],
+        "conditions": ["full_video"],
+        "trial_count": training_data_lock["records"],
+        "sampling": {
+            "seed": 42,
+            "option_permutations": 1,
+            "trial_shards": 1,
+        },
+    }
+    if not isinstance(training_trial_matrix_closure, Mapping):
+        raise ValueError(
+            "registered pilot projector training requires exact training "
+            "trial-matrix closure"
+        )
+    mismatches = {
+        key: {"expected": value, "actual": training_trial_matrix_closure.get(key)}
+        for key, value in expected_closure.items()
+        if training_trial_matrix_closure.get(key) != value
+    }
+    if mismatches:
+        raise ValueError(
+            f"registered pilot training trial-matrix contract mismatch: {mismatches}"
         )
 
 
 def main() -> None:
     args = parse_args()
     strict_mode = strict_information_upper_bound_mode(args)
+    if (
+        args.train_data_lock
+        or args.train_conditions_config
+        or args.train_protocol_config
+    ) and not strict_mode:
+        raise ValueError(
+            "training release/closure arguments are available only with the "
+            "strict interface"
+        )
     if strict_mode:
+        training_closure_args = (
+            args.train_conditions_config,
+            args.train_protocol_config,
+        )
+        if any(training_closure_args) and not all(training_closure_args):
+            raise ValueError(
+                "--train-conditions-config and --train-protocol-config must be "
+                "provided together"
+            )
+        if any(training_closure_args) and not args.train_data_lock:
+            raise ValueError(
+                "training trial-matrix closure also requires --train-data-lock"
+            )
         _validate_strict_output_directory(args)
     set_seed(args.seed)
     out_dir = Path(args.out_dir)
@@ -444,6 +575,31 @@ def main() -> None:
             encoder_name=args.encoder_name,
         )
         trial_protocol, _trial_protocol_metadata = load_protocol(args.protocol_config)
+        training_data_lock: dict[str, Any] | None = None
+        training_trial_matrix_closure: dict[str, Any] | None = None
+        if args.train_data_lock:
+            if args.train_conditions_config and args.train_protocol_config:
+                training_protocol, _training_protocol_metadata = load_protocol(
+                    args.train_protocol_config
+                )
+                training_authentication = validate_development_trial_matrix_closure(
+                    args.manifest,
+                    data_lock_path=args.train_data_lock,
+                    conditions_config_path=args.train_conditions_config,
+                    protocol=training_protocol,
+                )
+                training_data_lock = training_authentication["data_lock"]
+                training_trial_matrix_closure = training_authentication["closure"]
+            else:
+                training_data_lock = validate_trial_base_release(
+                    args.manifest,
+                    data_lock_path=args.train_data_lock,
+                )
+        _validate_registered_pilot_training_lock(
+            trial_protocol,
+            training_data_lock,
+            training_trial_matrix_closure,
+        )
         evaluation_trial_matrix_closure = validate_trial_matrix_closure(
             args.eval_manifest,
             data_lock_path=args.eval_data_lock,
@@ -544,6 +700,21 @@ def main() -> None:
                     "trial_build_attestation_sha256"
                 ),
             },
+            "training_data_lock": (
+                {
+                    "data_release_sha256": training_data_lock["data_release_sha256"],
+                    "file_sha256": training_data_lock["file_sha256"],
+                    "records": training_data_lock["records"],
+                    "datasets": training_data_lock["datasets"],
+                    "adapter_run_ids": [
+                        run["adapter_run_id"]
+                        for run in training_data_lock["adapter_runs"]
+                    ],
+                }
+                if training_data_lock is not None
+                else None
+            ),
+            "training_trial_matrix_closure": training_trial_matrix_closure,
             "evaluation_feature_extraction_metadata": {
                 "schema_version": evaluation_feature_metadata.get("schema_version"),
                 "execution_mode": evaluation_feature_metadata.get("execution_mode"),

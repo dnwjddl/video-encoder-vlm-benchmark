@@ -722,6 +722,29 @@ def main(argv: Sequence[str] | None = None) -> None:
             "max_tokens": args.max_tokens,
         },
     )
+    model_protocol = protocol_section(protocol, "model")
+    expected_encoder_name = str(model_protocol.get("visual_encoder_name") or "").strip()
+    expected_encoder_id = str(model_protocol.get("visual_encoder_id") or "").strip()
+    expected_encoder_revision = str(
+        model_protocol.get("visual_encoder_revision") or ""
+    ).strip()
+    if expected_encoder_name and args.encoder != expected_encoder_name:
+        raise ValueError(
+            "--encoder conflicts with locked protocol model.visual_encoder_name"
+        )
+    if expected_encoder_id and cfg.model_id != expected_encoder_id:
+        raise ValueError(
+            "resolved encoder model_id conflicts with locked protocol "
+            "model.visual_encoder_id"
+        )
+    if (
+        expected_encoder_revision
+        and str(cfg.revision or "") != expected_encoder_revision
+    ):
+        raise ValueError(
+            "resolved encoder revision conflicts with locked protocol "
+            "model.visual_encoder_revision"
+        )
     records = iter_jsonl(args.manifest)
     if args.limit is not None:
         if args.limit <= 0:

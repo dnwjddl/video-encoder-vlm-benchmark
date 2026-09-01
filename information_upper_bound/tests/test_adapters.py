@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from information_upper_bound.adapters import (
     AdapterError,
@@ -24,6 +25,9 @@ from information_upper_bound.adapters import (
 from information_upper_bound.adapters.cli import main as adapter_main
 from information_upper_bound.adapters.common import resolve_media
 from information_upper_bound.conditions import render_clue
+from information_upper_bound.cli import main as suite_main
+from information_upper_bound.data_lock import create_data_lock
+from information_upper_bound.pilot_protocol import main as prepare_protocol_main
 from information_upper_bound.schema import validate_record
 from information_upper_bound.validate import validate_manifest
 
@@ -54,6 +58,199 @@ class AdapterTests(unittest.TestCase):
                 "mvp",
             },
         )
+
+    def test_answer_blind_whole_unit_sample_is_lockable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            media_root = root / "videos"
+            scene_root = root / "scenes"
+            scenes: list[dict] = []
+            for scene_index in (10000, 10001):
+                filename = f"video_{scene_index:05d}.mp4"
+                _media(media_root / filename)
+                _json(
+                    scene_root / f"sim_{scene_index:05d}.json",
+                    {
+                        "ground_truth": {
+                            "objects": [
+                                {
+                                    "id": 0,
+                                    "color": "red",
+                                    "material": "metal",
+                                    "shape": "cube",
+                                }
+                            ],
+                            "collisions": [],
+                        }
+                    },
+                )
+                scenes.append(
+                    {
+                        "scene_index": scene_index,
+                        "video_filename": filename,
+                        "questions": [
+                            {
+                                "question_id": 0,
+                                "question_type": "predictive",
+                                "question": "What will happen next?",
+                                "program": ["predict"],
+                                "choices": [
+                                    {
+                                        "choice_id": 0,
+                                        "choice": "The cube moves.",
+                                        "answer": "correct",
+                                        "program": ["move"],
+                                    },
+                                    {
+                                        "choice_id": 1,
+                                        "choice": "The cube vanishes.",
+                                        "answer": "wrong",
+                                        "program": ["vanish"],
+                                    },
+                                ],
+                            }
+                        ],
+                    }
+                )
+            annotations = _json(root / "validation.json", scenes)
+            output = root / "pilot.jsonl"
+            report_output = root / "pilot.jsonl.report.json"
+            with redirect_stdout(io.StringIO()):
+                result = adapter_main(
+                    [
+                        "--dataset",
+                        "clevrer",
+                        "--annotations",
+                        str(annotations),
+                        "--media-root",
+                        str(media_root),
+                        "--scene-annotations",
+                        str(scene_root),
+                        "--output",
+                        str(output),
+                        "--report-output",
+                        str(report_output),
+                        "--split",
+                        "validation",
+                        "--source-split",
+                        "validation",
+                        "--resampling-unit-sample-size",
+                        "1",
+                        "--resampling-unit-sample-seed",
+                        "42",
+                    ]
+                )
+            self.assertEqual(result, 0)
+            report = json.loads(report_output.read_text(encoding="utf-8"))
+            selection = report["resampling_unit_selection"]
+            self.assertTrue(report["confirmatory_eligible"])
+            self.assertFalse(report["limited"])
+            self.assertEqual(selection["population_unit_count"], 2)
+            self.assertEqual(selection["selected_unit_count"], 1)
+            self.assertEqual(selection["selected_record_count"], 2)
+            self.assertEqual(
+                report["adapter_options"]["resampling_unit_selection"][
+                    "selected_unit_set_sha256"
+                ],
+                selection["selected_unit_set_sha256"],
+            )
+            lock = create_data_lock(
+                manifest_path=output, adapter_report_paths=[report_output]
+            )
+            self.assertEqual(lock["records"], 2)
+            self.assertEqual(lock["datasets"], {"clevrer": 2})
+            lock_path = _json(root / "pilot.lock.json", lock)
+            protocol_path = root / "pilot.protocol.yaml"
+            with (
+                patch(
+                    "information_upper_bound.pilot_protocol.validate_clevrer_selection_report"
+                ),
+                patch(
+                    "information_upper_bound.pilot_protocol.validate_release_coverage",
+                    return_value={"valid": True},
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
+                prepare_protocol_main(
+                    [
+                        "--manifest",
+                        str(output),
+                        "--adapter-report",
+                        str(report_output),
+                        "--data-lock",
+                        str(lock_path),
+                        "--out",
+                        str(protocol_path),
+                    ]
+                )
+            trials_path = root / "pilot.trials.jsonl.gz"
+            conditions_path = (
+                Path(__file__).parents[1] / "configs" / "clevrer_core_conditions.yaml"
+            )
+            with redirect_stdout(io.StringIO()):
+                suite_main(
+                    [
+                        "build-trials",
+                        "--development",
+                        "--manifest",
+                        str(output),
+                        "--data-lock",
+                        str(lock_path),
+                        "--config",
+                        str(conditions_path),
+                        "--protocol-config",
+                        str(protocol_path),
+                        "--out",
+                        str(trials_path),
+                    ]
+                )
+            self.assertTrue(trials_path.is_file())
+            trial_report = json.loads(
+                Path(str(trials_path) + ".report.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(trial_report["execution_mode"], "development")
+            self.assertGreater(trial_report["trials"], 0)
+            population_ids = [
+                item["resampling_unit_id"] for item in selection["population_units"]
+            ]
+            selection["selected_unit_ids"] = [
+                unit_id
+                for unit_id in population_ids
+                if unit_id not in set(selection["selected_unit_ids"])
+            ]
+            report["resampling_unit_selection"] = selection
+            _json(report_output, report)
+            with self.assertRaisesRegex(ValueError, "hash ranking"):
+                create_data_lock(
+                    manifest_path=output, adapter_report_paths=[report_output]
+                )
+
+    def test_resampling_unit_sample_flags_are_atomic_and_exclude_limit(self) -> None:
+        base = [
+            "--dataset",
+            "clevrer",
+            "--annotations",
+            "missing.json",
+            "--media-root",
+            "missing-media",
+            "--output",
+            "unused.jsonl",
+        ]
+        with self.assertRaisesRegex(SystemExit, "must be provided together"):
+            adapter_main([*base, "--resampling-unit-sample-size", "1", "--dry-run"])
+        with self.assertRaisesRegex(SystemExit, "mutually exclusive"):
+            adapter_main(
+                [
+                    *base,
+                    "--resampling-unit-sample-size",
+                    "1",
+                    "--resampling-unit-sample-seed",
+                    "42",
+                    "--limit",
+                    "1",
+                    "--dry-run",
+                ]
+            )
 
     def test_adapter_rejects_output_report_or_input_aliases(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
