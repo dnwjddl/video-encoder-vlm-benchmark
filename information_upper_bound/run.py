@@ -824,8 +824,22 @@ def run_trials(
     if trained_llm_identity and trained_llm_identity != str(
         scorer.pretrained_identity["identity_sha256"]
     ):
+        training_identity = projector_metadata.get("llm_pretrained_identity") or {}
+        training_source = (
+            training_identity.get("source", {})
+            if isinstance(training_identity, Mapping)
+            else {}
+        )
+        scoring_source = scorer.pretrained_identity.get("source", {})
         raise ValueError(
-            "projector training LLM/tokenizer identity does not match the scoring LLM"
+            "projector training LLM/tokenizer identity does not match the scoring LLM; "
+            f"expected_sha256={trained_llm_identity}, "
+            f"actual_sha256={scorer.pretrained_identity['identity_sha256']}, "
+            f"training_source_kind={training_source.get('kind')!r}, "
+            f"scoring_source_kind={scoring_source.get('kind')!r}. "
+            "A different VLMEB_LOCAL_FILES_ONLY mode can represent the same pinned Hub "
+            "commit through a different provenance route. Reproduce the training mode; "
+            "do not edit the projector metadata or protocol lock."
         )
 
     resolved_llm_id = str(llm_id or projector_metadata["llm_id"])

@@ -488,11 +488,16 @@ reads and authenticates the same full manifest, projector lock, feature bundle,
 and portable matrix closure before it executes only its deterministic
 content-hash partition. Keep `sampling.trial_shards: 1`; `--worker-count` is an
 execution partition and does not create or weaken the locked trial matrix.
+The registered projector was trained through the pinned logical Hub ID rather
+than a resolved snapshot path. Keep `VLMEB_LOCAL_FILES_ONLY=0` during scoring
+so its recorded identity is reproduced; the Hugging Face and Transformers
+offline flags still prohibit network access and use the completed local cache.
 
 ```bash
 mkdir -p outputs/information_upper_bound/clevrer_pilot/run-4gpu-001
 
-VLMEB_LOCAL_FILES_ONLY=1 CUDA_VISIBLE_DEVICES=0 information-upper-bound score \
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+VLMEB_LOCAL_FILES_ONLY=0 CUDA_VISIBLE_DEVICES=0 information-upper-bound score \
   --trials data/information_upper_bound/clevrer_pilot/validation_500.trials.jsonl.gz \
   --feature-index features/information_upper_bound/clevrer_pilot/eval/index.jsonl \
   --feature-metadata features/information_upper_bound/clevrer_pilot/eval/metadata.json \
@@ -502,7 +507,8 @@ VLMEB_LOCAL_FILES_ONLY=1 CUDA_VISIBLE_DEVICES=0 information-upper-bound score \
   --out outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-0-of-4.jsonl \
   --device cuda --worker-count 4 --worker-index 0 --resume
 
-VLMEB_LOCAL_FILES_ONLY=1 CUDA_VISIBLE_DEVICES=1 information-upper-bound score \
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+VLMEB_LOCAL_FILES_ONLY=0 CUDA_VISIBLE_DEVICES=1 information-upper-bound score \
   --trials data/information_upper_bound/clevrer_pilot/validation_500.trials.jsonl.gz \
   --feature-index features/information_upper_bound/clevrer_pilot/eval/index.jsonl \
   --feature-metadata features/information_upper_bound/clevrer_pilot/eval/metadata.json \
@@ -512,7 +518,8 @@ VLMEB_LOCAL_FILES_ONLY=1 CUDA_VISIBLE_DEVICES=1 information-upper-bound score \
   --out outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-1-of-4.jsonl \
   --device cuda --worker-count 4 --worker-index 1 --resume
 
-VLMEB_LOCAL_FILES_ONLY=1 CUDA_VISIBLE_DEVICES=2 information-upper-bound score \
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+VLMEB_LOCAL_FILES_ONLY=0 CUDA_VISIBLE_DEVICES=2 information-upper-bound score \
   --trials data/information_upper_bound/clevrer_pilot/validation_500.trials.jsonl.gz \
   --feature-index features/information_upper_bound/clevrer_pilot/eval/index.jsonl \
   --feature-metadata features/information_upper_bound/clevrer_pilot/eval/metadata.json \
@@ -522,7 +529,8 @@ VLMEB_LOCAL_FILES_ONLY=1 CUDA_VISIBLE_DEVICES=2 information-upper-bound score \
   --out outputs/information_upper_bound/clevrer_pilot/run-4gpu-001/predictions.worker-2-of-4.jsonl \
   --device cuda --worker-count 4 --worker-index 2 --resume
 
-VLMEB_LOCAL_FILES_ONLY=1 CUDA_VISIBLE_DEVICES=3 information-upper-bound score \
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+VLMEB_LOCAL_FILES_ONLY=0 CUDA_VISIBLE_DEVICES=3 information-upper-bound score \
   --trials data/information_upper_bound/clevrer_pilot/validation_500.trials.jsonl.gz \
   --feature-index features/information_upper_bound/clevrer_pilot/eval/index.jsonl \
   --feature-metadata features/information_upper_bound/clevrer_pilot/eval/metadata.json \
