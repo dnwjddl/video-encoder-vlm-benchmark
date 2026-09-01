@@ -1,0 +1,95 @@
+# Default encoder registry used by scripts.
+# Override any field from CLI with --model-id / --num-frames / --max-tokens if needed.
+
+clip-vit-l-14-336:
+  family: image
+  model_id: openai/clip-vit-large-patch14-336
+  trust_remote_code: false
+  processor: auto
+  feature_key: last_hidden_state
+  drop_cls: true
+  num_frames: 8
+  max_tokens: 256
+
+siglip-so400m:
+  family: image
+  model_id: google/siglip-so400m-patch14-384
+  trust_remote_code: false
+  processor: auto
+  feature_key: last_hidden_state
+  drop_cls: false
+  num_frames: 8
+  max_tokens: 256
+
+siglip2-so400m:
+  family: image
+  model_id: google/siglip2-so400m-patch14-384
+  trust_remote_code: false
+  processor: auto
+  feature_key: last_hidden_state
+  drop_cls: false
+  num_frames: 8
+  max_tokens: 256
+
+internvit-300m:
+  family: image
+  model_id: OpenGVLab/InternViT-300M-448px
+  trust_remote_code: true
+  processor: clip_image
+  feature_key: last_hidden_state
+  drop_cls: false
+  disable_flash_attn: true
+  num_frames: 8
+  max_tokens: 256
+
+dinov2-vitl14:
+  family: image
+  model_id: facebook/dinov2-large
+  trust_remote_code: false
+  processor: auto
+  feature_key: last_hidden_state
+  drop_cls: true
+  num_frames: 8
+  max_tokens: 256
+
+videomaev2-base:
+  family: video
+  model_id: OpenGVLab/VideoMAEv2-Base
+  trust_remote_code: true
+  processor: videomae
+  feature_key: extract_features
+  input_layout: bcthw
+  low_cpu_mem_usage: false
+  num_frames: 16
+  max_tokens: 256
+
+vjepa2-vith-256:
+  family: video
+  model_id: facebook/vjepa2-vith-fpc64-256
+  trust_remote_code: false
+  processor: video
+  feature_key: last_hidden_state
+  num_frames: 64
+  max_tokens: 256
+
+internvideo2-clip-s:
+  family: video
+  model_id: OpenGVLab/InternVideo2_CLIP_S
+  trust_remote_code: true
+  processor: model_transform
+  feature_key: auto
+  disable_flash_attn: true
+  low_cpu_mem_usage: false
+  num_frames: 8
+  max_tokens: 256
+  note: "AutoModel-compatible InternVideo2-CLIP checkpoint. Uses the model's bundled transform and encode_vision API."
+
+internvideo2-clip-1b:
+  family: video
+  model_id: OpenGVLab/InternVideo2-CLIP-1B-224p-f8
+  trust_remote_code: true
+  processor: auto
+  feature_key: auto
+  num_frames: 8
+  max_tokens: 256
+  note: "Gated add-on checkpoint. The HF repo contains 1B_clip.pth but no Transformers config.json; use official InternVideo code or internvideo2-clip-s for this harness."

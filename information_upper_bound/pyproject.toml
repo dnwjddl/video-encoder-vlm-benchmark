@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vlm-encoder-information-upper-bound"
+version = "0.2.0"
+description = "Controlled information-channel diagnostics for a frozen VideoLLM."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "vlm-encoder-benchmark>=0.1.0",
+  "accelerate>=0.34.0",
+  "datasets>=2.20.0",
+  "decord>=0.6.0",
+  "easydict>=1.13",
+  "einops>=0.8.0",
+  "huggingface_hub>=0.24.0",
+  "matplotlib>=3.8.0",
+  "numpy>=1.24.0",
+  "opencv-python>=4.9.0",
+  "open_clip_torch>=2.26.0",
+  "pandas>=2.0.0",
+  "pillow>=10.0.0",
+  "pyyaml>=6.0.1",
+  "requests>=2.31.0",
+  "timm>=1.0.0",
+  "torch>=2.3.0",
+  "torchvision>=0.18.0",
+  "tqdm>=4.66.0",
+  "transformers>=4.55.0",
+]
+
+[project.scripts]
+information-upper-bound = "information_upper_bound.cli:main"
+information-upper-bound-train-projector = "information_upper_bound.train_projector:main"
+
+[tool.setuptools]
+packages = ["information_upper_bound", "information_upper_bound.adapters"]
+include-package-data = true
+
+[tool.setuptools.package-dir]
+information_upper_bound = "."
+"information_upper_bound.adapters" = "adapters"
+
+[tool.setuptools.package-data]
+information_upper_bound = ["configs/*.yaml", "configs/exclusions/*.json", "README.md"]

@@ -1,0 +1,222 @@
+schema_version: "1.0"
+name: frozen-videollm-information-upper-bound
+
+# These values define the locked confirmatory run. Change them only before the
+# test split is opened and keep the resulting file with every result bundle.
+model:
+  llm_id: Qwen/Qwen2.5-7B-Instruct
+  # Template only: scoring refuses null. Pin the exact immutable hub commit
+  # here before opening the confirmatory test set.
+  llm_revision: null
+  llm_frozen: true
+  visual_encoder_frozen: true
+  projector_frozen_during_evaluation: true
+  dtype: bf16
+  max_length: 4096
+  overflow_policy: error
+
+# Produced by `information-upper-bound lock-data` after all strict adapter
+# outputs are merged. Trial construction refuses to open the confirmatory
+# matrix until this exact lock and dataset set are pinned.
+data:
+  data_release_sha256: REPLACE_WITH_PATH_INDEPENDENT_DATA_RELEASE_SHA256
+  conditions_sha256: 40250e2e6964a16d3c5645c157c6725a021c8a8838136b7fe55989d4fbf42408
+  required_datasets:
+    - tempcompass
+    - tvbench
+    - perception_test
+    - next_gqa
+    - clevrer
+    - egoschema
+    - mvp
+  # Adapter-run IDs are path-independent hashes printed by `adapt`. Replace
+  # every template after adapting the unopened official release. Requiring the
+  # exact run set prevents a one-task/config subset from masquerading as the
+  # complete suite.
+  coverage_contract:
+    schema_version: information_upper_bound.coverage_contract.v1
+    datasets:
+      tempcompass:
+        required_adapter_runs: 1
+        required_adapter_run_ids: [REPLACE_WITH_TEMPCOMPASS_ADAPTER_RUN_ID]
+        required_splits: [test]
+        required_information_families: [local_motion, temporal_order, metric_temporal, binding_tracking]
+        required_question_families: [tempcompass:action, tempcompass:direction, tempcompass:speed, tempcompass:order, tempcompass:attribute_change]
+        exact_question_family_set: true
+        required_source_roles: [annotations, meta_info]
+        minimum_records: 1
+        minimum_records_with_evidence: 0
+        minimum_records_with_safe_oracles: 0
+      tvbench:
+        required_adapter_runs: 1
+        required_adapter_run_ids: [REPLACE_WITH_FULL_TVBENCH_ADAPTER_RUN_ID]
+        required_splits: [test]
+        required_information_families: [local_motion, temporal_order, metric_temporal, binding_tracking]
+        required_question_families: [tvbench:action_antonym, tvbench:action_count, tvbench:action_localization, tvbench:action_sequence, tvbench:egocentric_sequence, tvbench:moving_direction, tvbench:object_count, tvbench:object_shuffle, tvbench:scene_transition, tvbench:unexpected_action]
+        exact_question_family_set: true
+        required_source_roles: [annotations]
+        minimum_records: 1
+        minimum_records_with_evidence: 1
+        minimum_records_with_safe_oracles: 0
+      perception_test:
+        required_adapter_runs: 1
+        required_adapter_run_ids: [REPLACE_WITH_PERCEPTION_TEST_ADAPTER_RUN_ID]
+        required_splits: [validation]
+        required_information_families: [static, local_motion, temporal_order, binding_tracking, metric_temporal, causal_compositional]
+        required_question_families: []
+        exact_question_family_set: false
+        required_source_roles: [annotations, cut_frame_mapping]
+        minimum_records: 1
+        minimum_records_with_evidence: 0
+        minimum_records_with_safe_oracles: 1
+      next_gqa:
+        required_adapter_runs: 1
+        required_adapter_run_ids: [REPLACE_WITH_NEXT_GQA_ADAPTER_RUN_ID]
+        required_splits: [validation]
+        required_information_families: [temporal_order, causal_compositional]
+        required_question_families: []
+        exact_question_family_set: false
+        required_source_roles: [annotations, grounding, video_map]
+        minimum_records: 1
+        minimum_records_with_evidence: 1
+        minimum_records_with_safe_oracles: 0
+      clevrer:
+        required_adapter_runs: 1
+        required_adapter_run_ids: [REPLACE_WITH_CLEVRER_VALIDATION_ADAPTER_RUN_ID]
+        required_splits: [validation]
+        required_information_families: [causal_compositional]
+        required_question_families: [clevrer:explanatory, clevrer:predictive, clevrer:counterfactual]
+        exact_question_family_set: true
+        required_source_roles: [annotations, scene_annotations]
+        minimum_records: 1
+        minimum_records_with_evidence: 0
+        minimum_records_with_safe_oracles: 1
+      egoschema:
+        required_adapter_runs: 1
+        required_adapter_run_ids: [REPLACE_WITH_EGOSCHEMA_PUBLIC_500_ADAPTER_RUN_ID]
+        required_splits: [public_500]
+        required_information_families: [long_range_selection]
+        required_question_families: [egoschema:long_range_compositional]
+        exact_question_family_set: true
+        required_source_roles: [annotations, answers]
+        minimum_records: 500
+        minimum_records_with_evidence: 0
+        minimum_records_with_safe_oracles: 0
+      mvp:
+        required_adapter_runs: 4
+        required_adapter_run_ids:
+          - REPLACE_WITH_MVP_HUMAN_OBJECT_INTERACTIONS_RUN_ID
+          - REPLACE_WITH_MVP_ROBOT_OBJECT_INTERACTIONS_RUN_ID
+          - REPLACE_WITH_MVP_INTUITIVE_PHYSICS_RUN_ID
+          - REPLACE_WITH_MVP_TEMPORAL_REASONING_RUN_ID
+        required_splits: [test]
+        required_information_families: [temporal_order, binding_tracking, causal_compositional]
+        required_question_families: [mvp:human_object_interactions, mvp:robot_object_interactions, mvp:intuitive_physics, mvp:temporal_reasoning]
+        exact_question_family_set: true
+        required_source_roles: [annotations]
+        minimum_records: 1
+        minimum_records_with_evidence: 0
+        minimum_records_with_safe_oracles: 0
+
+# This is the only late-bound protocol section: build-trials v2 deliberately
+# excludes it from trial_build_protocol_sha256 because projector training must
+# first bind the held-out feature bundle and the deterministically replayed full
+# trial-set closure. Replace every value below with the lock emitted by strict
+# projector training, then freeze the final protocol before scoring. Raw
+# manifest SHA values remain representation audit; the closure/root/count are
+# the portable scientific completeness identity.
+projector:
+  checkpoint_sha256: REPLACE_WITH_PROJECTOR_CHECKPOINT_SHA256
+  metadata_sha256: REPLACE_WITH_PROJECTOR_METADATA_SHA256
+  training_manifest_sha256: REPLACE_WITH_TRAINING_MANIFEST_SHA256
+  evaluation_manifest_sha256: REPLACE_WITH_EVALUATION_MANIFEST_SHA256
+  training_feature_index_sha256: REPLACE_WITH_TRAINING_FEATURE_INDEX_SHA256
+  training_feature_metadata_sha256: REPLACE_WITH_TRAINING_FEATURE_METADATA_SHA256
+  training_feature_artifact_root_sha256: REPLACE_WITH_TRAINING_FEATURE_ROOT_SHA256
+  evaluation_feature_index_sha256: REPLACE_WITH_EVALUATION_FEATURE_INDEX_SHA256
+  evaluation_feature_metadata_sha256: REPLACE_WITH_EVALUATION_FEATURE_METADATA_SHA256
+  evaluation_feature_artifact_root_sha256: REPLACE_WITH_EVALUATION_FEATURE_ROOT_SHA256
+  # Produced only after deterministic replay proves that no condition, dose,
+  # option permutation, or base item was removed from the expanded matrix.
+  evaluation_trial_matrix_closure_sha256: REPLACE_WITH_EVALUATION_TRIAL_MATRIX_CLOSURE_SHA256
+  evaluation_trial_set_root_sha256: REPLACE_WITH_EVALUATION_TRIAL_SET_ROOT_SHA256
+  evaluation_trial_count: REPLACE_WITH_EVALUATION_TRIAL_COUNT
+  encoder_extraction_pipeline_identity_sha256: REPLACE_WITH_ENCODER_PIPELINE_SHA256
+  llm_pretrained_identity_sha256: REPLACE_WITH_TRAINING_LLM_IDENTITY_SHA256
+  training_dtype: bf16
+  training_max_length: 4096
+  training_seed: 42
+
+sampling:
+  seed: 42
+  # One cyclic shift per answer position; this is exact for mixed 2/3/4/5-way MCQ.
+  option_permutations: all
+  # Set this before the run when the expanded matrix must be distributed. Each
+  # shard is a stable hash partition of resampling_unit_id (raw video/scene or
+  # paired-video family); shard_index is execution-only.
+  trial_shards: 1
+  # Strong source-byte identities are mandatory for the confirmatory cache.
+  require_media_sha256: true
+  require_strong_encoder_identity: true
+  # Each encoder's configured num_frames is fixed across all views. Evidence
+  # views change which source frames are sampled, never the input token budget.
+  match_frame_budget_across_views: true
+
+analysis:
+  reference_condition: full_video
+  cluster_key_priority: [resampling_unit_id, pair_id, independent_unit_id, base_id]
+  # Every emitted preregistered stratum/dose contrast must retain at least this
+  # many independent source-video/scene bootstrap units after exact alignment.
+  minimum_confirmatory_resampling_units: 1
+  bootstrap_replicates: 10000
+  confidence_level: 0.95
+  seed: 20250308
+  ece_bins: 10
+  report_incomplete_groups: true
+
+confirmatory_comparisons:
+  - [full_video, question_only]
+  - [full_video, single_frame]
+  - [full_video, shuffled_frames]
+  - [full_video, reversed_frames]
+  - [atomic_oracle, question_only]
+  - [ordered_oracle, atomic_oracle]
+  - [ordered_oracle, ordered_timestamp_sham]
+  - [ordered_timestamp_sham, atomic_oracle]
+  - [reasoning_oracle, ordered_oracle]
+  - [reasoning_oracle, reasoning_operator_sham]
+  - [reasoning_operator_sham, ordered_oracle]
+  - [structured_oracle, question_only]
+  - [ordered_embedding_oracle, ordered_oracle]
+  - [reasoning_embedding_oracle, reasoning_oracle]
+  - [video_plus_ordered_oracle, full_video]
+  - [video_plus_reasoning_oracle, video_plus_ordered_oracle]
+  - [video_plus_structured_oracle, full_video]
+  - [evidence_only, full_video]
+  - [evidence_present, evidence_removed]
+  - [evidence_present, random_position_mask]
+  - [random_position_mask, evidence_removed]
+  - [evidence_only, random_matched]
+
+dataset_roles:
+  tempcompass:
+    information_families: [local_motion, temporal_order, metric_temporal, binding_tracking]
+    primary_use: conflicting short-video temporal pairs
+  tvbench:
+    information_families: [local_motion, temporal_order, metric_temporal, binding_tracking]
+    primary_use: temporally hard task controls
+  perception_test:
+    information_families: [static, local_motion, temporal_order, binding_tracking, metric_temporal, causal_compositional]
+    primary_use: real-world tracks, actions, memory, and physics
+  next_gqa:
+    information_families: [static, temporal_order, causal_compositional]
+    primary_use: gold temporal evidence ablations
+  clevrer:
+    information_families: [causal_compositional]
+    primary_use: exact simulator state and counterfactual programs
+  egoschema:
+    information_families: [long_range_selection]
+    primary_use: long-context dilution; no gold evidence-span claim
+  mvp:
+    information_families: [temporal_order, binding_tracking, causal_compositional]
+    primary_use: minimal visual counterfactual pairs

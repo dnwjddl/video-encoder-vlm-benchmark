@@ -1,0 +1,9 @@
+{
+  "exclusions": [
+    {
+      "dataset": "next_gqa",
+      "source_id": "5256928210:7",
+      "reason": "Official validation row repeats the semantic option 'scarf' in a0 and a4."
+    }
+  ]
+}
