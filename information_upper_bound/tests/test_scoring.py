@@ -10,6 +10,7 @@ from information_upper_bound.io import write_jsonl
 from information_upper_bound.extract_features import (
     SCHEMA_VERSION,
     feature_artifact_identity,
+    feature_artifact_metadata,
     feature_content_hash,
     media_content_identity,
     media_fingerprint,
@@ -78,6 +79,24 @@ class PromptTests(unittest.TestCase):
 
 
 class FeatureStoreTests(unittest.TestCase):
+    def test_extractor_metadata_satisfies_feature_store_contract(self) -> None:
+        metadata = feature_artifact_metadata(
+            visual_id="visual::1",
+            view_content_hash_value="a" * 64,
+            feature_content_hash_value="b" * 64,
+            encoder_config={"model_id": "encoder-a"},
+            extraction_identity={"identity_sha256": "c" * 64},
+            media_identity={"sha256": "d" * 64, "size_bytes": 17},
+            decoded_frame_identity={"sha256": "e" * 64},
+            sampling={"selected_indices": [0]},
+            feature_tensor_identity={"sha256": "f" * 64},
+            feature_artifact_identity_sha256="0" * 64,
+        )
+        self.assertEqual(
+            set(metadata),
+            set(FeatureStore._ARTIFACT_MATCH_FIELDS),
+        )
+
     def _write_feature(self, root: Path, *, visual_id: str = "visual::1") -> dict:
         features = torch.arange(12, dtype=torch.float32).reshape(3, 4)
         encoder_config = {"model_id": "encoder-a", "num_frames": 8}

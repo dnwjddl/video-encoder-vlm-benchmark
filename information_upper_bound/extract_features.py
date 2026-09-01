@@ -362,6 +362,36 @@ def feature_artifact_identity(
     )
 
 
+def feature_artifact_metadata(
+    *,
+    visual_id: str,
+    view_content_hash_value: str,
+    feature_content_hash_value: str,
+    encoder_config: Mapping[str, Any],
+    extraction_identity: Mapping[str, Any],
+    media_identity: Mapping[str, Any],
+    decoded_frame_identity: Mapping[str, Any],
+    sampling: Mapping[str, Any],
+    feature_tensor_identity: Mapping[str, Any],
+    feature_artifact_identity_sha256: str,
+) -> dict[str, Any]:
+    """Metadata shared verbatim by a feature artifact and its index row."""
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "visual_id": str(visual_id),
+        "view_content_hash": str(view_content_hash_value),
+        "feature_content_hash": str(feature_content_hash_value),
+        "encoder_config": dict(encoder_config),
+        "extraction_identity": dict(extraction_identity),
+        "media_content_identity": dict(media_identity),
+        "decoded_frame_identity": dict(decoded_frame_identity),
+        "sampling": dict(sampling),
+        "feature_tensor_identity": dict(feature_tensor_identity),
+        "feature_artifact_identity_sha256": str(feature_artifact_identity_sha256),
+    }
+
+
 def dotted_get(record: Mapping[str, Any], path: str, default: Any = MISSING) -> Any:
     current: Any = record
     for component in path.split("."):
@@ -1045,38 +1075,51 @@ def main(argv: Sequence[str] | None = None) -> None:
                     sampling=sampling,
                     feature_tensor_identity=feature_tensor_identity,
                 )
+                artifact_metadata = feature_artifact_metadata(
+                    visual_id=visual_id,
+                    view_content_hash_value=view_hash,
+                    feature_content_hash_value=feature_hash,
+                    encoder_config=encoder_config,
+                    extraction_identity=extraction_identity,
+                    media_identity=content_identity,
+                    decoded_frame_identity=frame_identity,
+                    sampling=sampling,
+                    feature_tensor_identity=feature_tensor_identity,
+                    feature_artifact_identity_sha256=artifact_identity,
+                )
                 artifact = {
-                    "schema_version": SCHEMA_VERSION,
-                    "visual_id": visual_id,
+                    **artifact_metadata,
                     "source_visual_id": source_visual_id,
                     "view": view,
                     "view_spec": spec.to_dict(),
-                    "view_content_hash": view_hash,
-                    "feature_content_hash": feature_hash,
                     "encoder": args.encoder,
-                    "encoder_config": encoder_config,
-                    "extraction_identity": extraction_identity,
                     "media_fingerprint": fingerprint,
-                    "media_content_identity": content_identity,
-                    "decoded_frame_identity": frame_identity,
-                    "sampling": sampling,
-                    "feature_tensor_identity": feature_tensor_identity,
-                    "feature_artifact_identity_sha256": artifact_identity,
                     "features": features,
                 }
                 _atomic_torch_save(feature_path, artifact)
                 shape = list(features.shape)
                 computed += 1
             feature_file_sha256 = sha256_file(feature_path)
+            artifact_metadata = feature_artifact_metadata(
+                visual_id=visual_id,
+                view_content_hash_value=view_hash,
+                feature_content_hash_value=feature_hash,
+                encoder_config=encoder_config,
+                extraction_identity=extraction_identity,
+                media_identity=content_identity,
+                decoded_frame_identity=frame_identity,
+                sampling=sampling,
+                feature_tensor_identity=feature_tensor_identity,
+                feature_artifact_identity_sha256=artifact_identity,
+            )
 
             base_id = str(record.get("base_id") or record_id)
             index_rows.append(
                 {
-                    "schema_version": SCHEMA_VERSION,
+                    **artifact_metadata,
                     "id": visual_id,
                     "first_record_id": record_id,
                     "base_id": base_id,
-                    "visual_id": visual_id,
                     "source_visual_id": source_visual_id,
                     "visual_id_source": visual_id_source,
                     "pair_id": _nested_label(record, "pair_id"),
@@ -1087,18 +1130,10 @@ def main(argv: Sequence[str] | None = None) -> None:
                     "benchmark": record.get("benchmark"),
                     "view": view,
                     "view_spec": spec.to_dict(),
-                    "view_content_hash": view_hash,
-                    "feature_content_hash": feature_hash,
-                    "extraction_identity": extraction_identity,
-                    "media_content_identity": content_identity,
                     "media_fingerprint": fingerprint,
-                    "decoded_frame_identity": frame_identity,
                     "feature_path": str(feature_path.resolve()),
                     "feature_file_sha256": feature_file_sha256,
-                    "feature_tensor_identity": feature_tensor_identity,
-                    "feature_artifact_identity_sha256": artifact_identity,
                     "shape": shape,
-                    "sampling": sampling,
                 }
             )
             indexed_visuals[visual_id] = current_signature
