@@ -70,6 +70,7 @@ information_upper_bound/
   pyproject.toml         folder-local package and console entry points
   requirements.txt      pip dependency set
   environment.yml       minimal Python 3.11 Conda environment
+  environment-linux.yml Linux environment with a pinned GNU C/C++ runtime
   adapters/              strict converters for official dataset formats
   configs/
     encoders.yaml        visual-encoder registry
@@ -201,11 +202,17 @@ and `answer_derived` must be explicitly `false`.
 ## Reproducible run
 
 Create the folder-local Conda environment and install the unchanged parent
-benchmark package followed by this diagnostic package. Run these commands from
-the repository root:
+benchmark package followed by this diagnostic package. On Linux, use the file
+that also pins the GNU C/C++ runtime; on macOS, use `environment.yml`. Run these
+commands from the repository root:
 
 ```bash
-conda env create -f information_upper_bound/environment.yml
+# Linux
+conda env create -f information_upper_bound/environment-linux.yml
+
+# macOS instead:
+# conda env create -f information_upper_bound/environment.yml
+
 conda activate video-iub
 python -m pip install -e .
 python -m pip install -e ./information_upper_bound
@@ -217,6 +224,25 @@ The first editable install exposes the repository's existing `vlmevalbench`
 runtime without changing parent files. The second installs only this folder and
 its dependencies. `requirements.txt` remains available for environments
 managed from a requirements-file workflow.
+
+If Linux reports `CXXABI_1.3.15 not found` while importing `sqlite3`, the
+process is loading an older system `libstdc++.so.6` instead of the Conda
+runtime. Repair an existing environment and test it without the inherited
+library path:
+
+```bash
+conda activate video-iub
+conda install -c conda-forge --strict-channel-priority \
+  "libgcc-ng>=13" "libstdcxx-ng>=13" -y
+env -u LD_LIBRARY_PATH python -c \
+  "import sqlite3; print(sqlite3.sqlite_version)"
+env -u LD_LIBRARY_PATH information-upper-bound --help
+```
+
+When those commands pass, run `unset LD_LIBRARY_PATH` in that shell before the
+benchmark. Conda's own troubleshooting guidance recommends removing an
+inherited Linux `LD_LIBRARY_PATH` because it can override environment-local C
+libraries.
 
 The package also installs the equivalent `information-upper-bound` console
 command and the standalone `information-upper-bound-train-projector` trainer.
