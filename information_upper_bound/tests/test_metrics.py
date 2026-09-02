@@ -2057,6 +2057,59 @@ class CliAndConfigTest(unittest.TestCase):
                 ],
             )
 
+    def test_protocol_loader_accepts_safe_dump_block_comparison_lists(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            config = Path(temporary) / "protocol.final.yaml"
+            config.write_text(
+                "analysis:\n"
+                "  seed: 9001\n"
+                "  bootstrap_replicates: 25\n"
+                "confirmatory_comparisons:\n"
+                "- - full_video\n"
+                "  - question_only\n"
+                "- - reasoning_oracle\n"
+                "  - ordered_oracle\n",
+                encoding="utf-8",
+            )
+            values, _ = load_protocol_config(config)
+            self.assertEqual(values["seed"], 9001)
+            self.assertEqual(
+                values["confirmatory_comparisons"],
+                [
+                    ["full_video", "question_only"],
+                    ["reasoning_oracle", "ordered_oracle"],
+                ],
+            )
+
+    def test_confirmatory_completeness_rejects_empty_clevrer_comparisons(
+        self,
+    ) -> None:
+        report = {
+            "coverage": {
+                "expected_trials": 1,
+                "joined_coverage": 1.0,
+                "prediction_input": {"duplicate_trial_ids": 0},
+                "manifest_input": {"duplicate_trial_ids": 0},
+                "issues": {"counts": {}},
+            },
+            "score_metadata_authentication": {"authenticated": True},
+            "protocol": {
+                "minimum_confirmatory_resampling_units": 1,
+                "confirmatory_comparisons": [],
+            },
+            "analysis_coverage": {
+                "comparisons": {},
+                "clevrer_primary": {
+                    "summary_groups": 1,
+                    "authenticated_summary_groups": 1,
+                    "confirmatory_comparison_rows": 0,
+                    "authenticated_confirmatory_comparison_rows": 0,
+                },
+            },
+        }
+        failures = _require_complete_failures(report, expected_requested=True)
+        self.assertIn("clevrer_confirmatory_comparisons_missing", failures)
+
     def test_scalar_yaml_and_cli_override_write_all_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -18,6 +18,7 @@ from information_upper_bound.finalize_projector_protocol import (
 )
 from information_upper_bound.io import sha256_file
 from information_upper_bound.integrity import canonical_sha256
+from information_upper_bound.metrics import load_protocol_config
 from information_upper_bound.pilot_protocol import DEFAULT_TEMPLATE
 from information_upper_bound.protocol import validate_locked_projector_protocol
 from information_upper_bound.train_projector import save_checkpoint
@@ -40,6 +41,11 @@ class FinalizeProjectorProtocolTests(unittest.TestCase):
                 "evaluation_trial_count": "REPLACE_COUNT",
             },
             "sampling": {"seed": 42},
+            "analysis": {"seed": 9001, "bootstrap_replicates": 25},
+            "confirmatory_comparisons": [
+                ["full_video", "question_only"],
+                ["reasoning_oracle", "ordered_oracle"],
+            ],
             "dataset_roles": {
                 "example": {
                     "information_families": ["temporal_order"],
@@ -113,6 +119,11 @@ class FinalizeProjectorProtocolTests(unittest.TestCase):
             self.assertEqual(
                 yaml.safe_load(output_path.read_text(encoding="utf-8"))["projector"],
                 self.lock_payload,
+            )
+            analysis_config, _ = load_protocol_config(output_path)
+            self.assertEqual(
+                analysis_config["confirmatory_comparisons"],
+                self.protocol["confirmatory_comparisons"],
             )
             self.assertEqual(validate_projector.call_count, 2)
 

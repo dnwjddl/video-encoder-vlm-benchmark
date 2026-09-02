@@ -26,6 +26,8 @@ import os
 from typing import Any, Callable, Iterable, Mapping, Sequence
 import unicodedata
 
+import yaml
+
 try:
     import numpy as np
 except ImportError:  # pragma: no cover - requirements.txt installs NumPy.
@@ -3914,28 +3916,6 @@ def _read_jsonl_tolerant(
     return rows, issues
 
 
-def _scalar_yaml_value(text: str) -> Any:
-    value = text.strip()
-    if not value:
-        return None
-    if value[0:1] in {'"', "'"} and value[-1:] == value[0:1]:
-        return value[1:-1]
-    lowered = value.casefold()
-    if lowered in {"null", "none", "~"}:
-        return None
-    if lowered in {"true", "yes", "on"}:
-        return True
-    if lowered in {"false", "no", "off"}:
-        return False
-    try:
-        return int(value)
-    except ValueError:
-        try:
-            return float(value)
-        except ValueError:
-            return value
-
-
 def _normalize_confirmatory_comparisons(value: Any) -> list[list[str]]:
     if value in (None, "", []):
         return []
@@ -3963,53 +3943,47 @@ def _normalize_confirmatory_comparisons(value: Any) -> list[list[str]]:
     return output
 
 
-def _yaml_confirmatory_comparisons(raw_lines: Sequence[str]) -> list[list[str]] | None:
-    header = re.compile(r"^(\s*)confirmatory_comparisons\s*:\s*(.*?)\s*$")
-    entry = re.compile(r"^\s*-\s*\[(.*)\]\s*$")
-    for index, raw_line in enumerate(raw_lines):
-        content = raw_line.split("#", 1)[0].rstrip()
-        match = header.match(content)
-        if not match:
-            continue
-        inline = match.group(2).strip()
-        if inline:
-            if inline == "[]":
-                return []
-            raise ValueError(
-                "inline confirmatory_comparisons must be []; use one '- [left, right]' per line"
-            )
-        header_indent = len(match.group(1))
-        pairs: list[list[str]] = []
-        for candidate in raw_lines[index + 1 :]:
-            candidate_content = candidate.split("#", 1)[0].rstrip()
-            if not candidate_content.strip():
-                continue
-            indent = len(candidate_content) - len(candidate_content.lstrip())
-            if indent <= header_indent:
-                break
-            item_match = entry.match(candidate_content)
-            if not item_match:
-                raise ValueError(
-                    "confirmatory_comparisons entries must use '- [left_condition, right_condition]'"
-                )
-            pieces = [piece.strip() for piece in item_match.group(1).split(",")]
-            if len(pieces) != 2:
-                raise ValueError(
-                    "each confirmatory comparison must contain exactly two conditions"
-                )
-            pairs.append([str(_scalar_yaml_value(piece)) for piece in pieces])
-        return _normalize_confirmatory_comparisons(pairs)
-    return None
+_ANALYSIS_PROTOCOL_FIELDS = frozenset(
+    {
+        "bootstrap_replicates",
+        "confidence_level",
+        "seed",
+        "reference_condition",
+        "ece_bins",
+        "minimum_confirmatory_resampling_units",
+    }
+)
+
+
+def _protocol_config_values(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Extract analysis settings from an already parsed protocol mapping."""
+
+    candidate = payload.get("analysis", payload)
+    values: dict[str, Any] = {}
+    if isinstance(candidate, Mapping):
+        for key in _ANALYSIS_PROTOCOL_FIELDS:
+            item = candidate.get(key)
+            if item is not None and not isinstance(item, (Mapping, list)):
+                values[key] = item
+    raw_comparisons = payload.get("confirmatory_comparisons")
+    if raw_comparisons is None and isinstance(candidate, Mapping):
+        raw_comparisons = candidate.get("confirmatory_comparisons")
+    if raw_comparisons is not None:
+        values["confirmatory_comparisons"] = _normalize_confirmatory_comparisons(
+            raw_comparisons
+        )
+    return values
 
 
 def load_protocol_config(
     path: str | Path | None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Load scalar settings from the protocol's ``analysis`` section.
+    """Load settings from the protocol's ``analysis`` section.
 
     The protocol also contains a sampling seed.  Scoping this parser to the
     analysis section prevents YAML key order from silently selecting the wrong
-    seed when both sections are present.
+    seed when both sections are present.  YAML is parsed structurally so both
+    flow-style and block-style comparison lists have identical semantics.
     """
 
     if path is None:
@@ -4018,64 +3992,18 @@ def load_protocol_config(
     if not source.is_file():
         return {}, {"path": str(source), "found": False, "used": False}
     text = source.read_text(encoding="utf-8")
-    wanted = {
-        "bootstrap_replicates",
-        "confidence_level",
-        "seed",
-        "reference_condition",
-        "ece_bins",
-        "minimum_confirmatory_resampling_units",
-    }
-    values: dict[str, Any] = {}
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
-        payload = None
-    if isinstance(payload, Mapping):
-        candidate = payload.get("analysis", payload)
-        if isinstance(candidate, Mapping):
-            for key in wanted:
-                item = candidate.get(key)
-                if item is not None and not isinstance(item, (Mapping, list)):
-                    values[key] = item
-        raw_comparisons = payload.get("confirmatory_comparisons")
-        if raw_comparisons is None and isinstance(candidate, Mapping):
-            raw_comparisons = candidate.get("confirmatory_comparisons")
-        if raw_comparisons is not None:
-            values["confirmatory_comparisons"] = _normalize_confirmatory_comparisons(
-                raw_comparisons
-            )
-    else:
-        pattern = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*?)\s*$")
-        raw_lines = text.splitlines()
-        analysis_start: int | None = None
-        analysis_indent = 0
-        for index, raw_line in enumerate(raw_lines):
-            content = raw_line.split("#", 1)[0].rstrip()
-            match = pattern.match(content)
-            if match and match.group(1) == "analysis" and not match.group(2):
-                analysis_start = index + 1
-                analysis_indent = len(content) - len(content.lstrip())
-                break
-        scoped_lines = raw_lines
-        if analysis_start is not None:
-            scoped_lines = []
-            for raw_line in raw_lines[analysis_start:]:
-                content = raw_line.split("#", 1)[0].rstrip()
-                if not content.strip():
-                    continue
-                indent = len(content) - len(content.lstrip())
-                if indent <= analysis_indent:
-                    break
-                scoped_lines.append(content)
-        for raw_line in scoped_lines:
-            line = raw_line.split("#", 1)[0].rstrip()
-            match = pattern.match(line)
-            if match and match.group(1) in wanted:
-                values[match.group(1)] = _scalar_yaml_value(match.group(2))
-        comparisons = _yaml_confirmatory_comparisons(raw_lines)
-        if comparisons is not None:
-            values["confirmatory_comparisons"] = comparisons
+        try:
+            payload = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            raise ValueError(
+                f"could not parse protocol config {source}: {exc}"
+            ) from exc
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"protocol config must contain a mapping: {source}")
+    values = _protocol_config_values(payload)
     return values, {
         "path": str(source.resolve()),
         "found": True,
@@ -4914,6 +4842,8 @@ def _require_complete_failures(
     ):
         failures.append("clevrer_primary_comparison_not_authenticated")
     comparisons = analysis_protocol.get("confirmatory_comparisons") or []
+    if clevrer_summary_groups and not comparisons:
+        failures.append("clevrer_confirmatory_comparisons_missing")
 
     def add_comparison_failure(kind: str, name: str) -> None:
         value = f"{kind}::{name}"
@@ -5058,6 +4988,11 @@ def run_analysis_cli(args: argparse.Namespace) -> dict[str, Any]:
     data_release_issues: list[dict[str, Any]] = []
     if strict:
         _locked_protocol, locked_metadata = load_protocol(config_path)
+        locked_config = _protocol_config_values(_locked_protocol)
+        if config != locked_config:
+            raise ValueError(
+                "analysis settings parsed from the locked protocol are inconsistent"
+            )
         protocol_sha256 = str(locked_metadata["sha256"])
         data_release_sha256 = str(
             validate_data_protocol(_locked_protocol)["data_release_sha256"]
