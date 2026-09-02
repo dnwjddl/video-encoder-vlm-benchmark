@@ -1030,7 +1030,9 @@ The analysis produces:
   independent-cluster count, and cluster-bootstrap confidence intervals;
 - pre-registered `left - right` confirmatory contrasts from `protocol.yaml`, plus
   labeled exploratory contrasts, on aligned rows from the exact shared item
-  intersection (requested dose is matched when both sides have dose grids);
+  intersection (requested dose is matched when both sides have dose grids;
+  scene-dependent effective dose is pooled within requested dose and reported
+  with mean/min/max diagnostics rather than defining a separate estimand);
 - original/counterfactual both-correct and correct semantic-flip rates;
 - original/nuisance both-correct semantic invariance;
 - semantic option-permutation consistency and all-permutations-correct rate;

@@ -883,6 +883,79 @@ class SummaryAndComparisonTest(unittest.TestCase):
         self.assertEqual(diagnostics["ambiguous_left_alignment_keys"], 0)
         self.assertEqual(diagnostics["ambiguous_right_alignment_keys"], 0)
 
+    def test_confirmatory_pools_effective_dose_within_requested_dose(self) -> None:
+        rows: list[dict[str, object]] = []
+        for base_id, condition_effective, reference_effective in (
+            ("a", 1, 1),
+            ("b", 2, 1),
+        ):
+            rows.extend(
+                [
+                    prediction_row(
+                        f"reasoning-{base_id}",
+                        base_id,
+                        "reasoning_oracle",
+                        correct=True,
+                        requested_dose="all",
+                        effective_dose=condition_effective,
+                    ),
+                    prediction_row(
+                        f"ordered-{base_id}",
+                        base_id,
+                        "ordered_oracle",
+                        correct=False,
+                        requested_dose="all",
+                        effective_dose=reference_effective,
+                    ),
+                ]
+            )
+        expected = [manifest_row(row) for row in rows]
+        result = analyze_predictions(
+            rows,
+            expected,
+            confirmatory_comparisons=[["reasoning_oracle", "ordered_oracle"]],
+            minimum_confirmatory_resampling_units=2,
+            bootstrap_replicates=0,
+        )
+        comparisons = [
+            row
+            for row in result["comparisons"]
+            if row["comparison_type"] == "confirmatory"
+        ]
+        self.assertEqual(len(comparisons), 1)
+        comparison = comparisons[0]
+        self.assertEqual(comparison["requested_dose"], "all")
+        self.assertIsNone(comparison["effective_dose"])
+        self.assertEqual(comparison["aligned_rows"], 2)
+        self.assertEqual(comparison["condition_effective_dose_min"], 1.0)
+        self.assertEqual(comparison["condition_effective_dose_max"], 2.0)
+        self.assertEqual(comparison["reference_effective_dose_mean"], 1.0)
+        failures = _require_complete_failures(result["report"], expected_requested=True)
+        self.assertNotIn(
+            "confirmatory_comparison_below_minimum_resampling_units::"
+            "reasoning_oracle_minus_ordered_oracle",
+            failures,
+        )
+
+        reverse = analyze_predictions(
+            rows,
+            expected,
+            confirmatory_comparisons=[["ordered_oracle", "reasoning_oracle"]],
+            minimum_confirmatory_resampling_units=2,
+            bootstrap_replicates=0,
+        )
+        reverse_comparisons = [
+            row
+            for row in reverse["comparisons"]
+            if row["comparison_type"] == "confirmatory"
+        ]
+        self.assertEqual(len(reverse_comparisons), 1)
+        reverse_comparison = reverse_comparisons[0]
+        self.assertEqual(reverse_comparison["aligned_rows"], 2)
+        self.assertEqual(reverse_comparison["accuracy_gain"], -1.0)
+        self.assertEqual(reverse_comparison["condition_effective_dose_mean"], 1.0)
+        self.assertEqual(reverse_comparison["reference_effective_dose_mean"], 1.5)
+
     def test_confirmatory_completeness_enforces_locked_resampling_minimum(self) -> None:
         rows = [
             prediction_row(f"full-{base}", base, "full_video", correct=True)

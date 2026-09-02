@@ -116,6 +116,10 @@ GROUP_FIELDS = STRATUM_FIELDS + (
     "requested_dose",
     "effective_dose",
 )
+CONFIRMATORY_GROUP_FIELDS = STRATUM_FIELDS + (
+    "condition",
+    "requested_dose",
+)
 PREDICTION_FIELDS = (
     "trial_id",
     "base_id",
@@ -2675,16 +2679,19 @@ def _confirmatory_contrast_rows(
     right_expected, ambiguous_expected_right = _dose_aware_condition_index(
         expected, right_condition, design_doses
     )
+    # Requested dose is the assigned intervention. Effective dose is a
+    # scene-dependent realized amount and must not split the preregistered
+    # estimand into rare post-assignment cells.
     left_groups: dict[tuple[Any, ...], list[Mapping[str, Any]]] = defaultdict(list)
     left_expected_groups: dict[tuple[Any, ...], list[Mapping[str, Any]]] = defaultdict(
         list
     )
     for row in observed:
         if str(row.get("condition")) == left_condition:
-            left_groups[_group_key(row)].append(row)
+            left_groups[_group_key(row, CONFIRMATORY_GROUP_FIELDS)].append(row)
     for row in expected:
         if str(row.get("condition")) == left_condition:
-            left_expected_groups[_group_key(row)].append(row)
+            left_expected_groups[_group_key(row, CONFIRMATORY_GROUP_FIELDS)].append(row)
 
     outputs: list[dict[str, Any]] = []
     unmatched = 0
@@ -2730,7 +2737,7 @@ def _confirmatory_contrast_rows(
         expected_left_rows_total += len(raw_expected_rows)
 
         stratum = key[: len(STRATUM_FIELDS)]
-        requested_dose = key[GROUP_FIELDS.index("requested_dose")]
+        requested_dose = key[CONFIRMATORY_GROUP_FIELDS.index("requested_dose")]
         right_doses = design_doses.get(stratum, set())
         right_is_multi_dose = len(right_doses) > 1
         right_dose_key = requested_dose if right_is_multi_dose else None
@@ -2825,9 +2832,26 @@ def _confirmatory_contrast_rows(
             bootstrap_replicates=bootstrap_replicates,
             confidence_level=confidence_level,
         )
-        output = dict(zip(GROUP_FIELDS, key))
+
+        def effective_dose_fields(
+            condition_rows: Sequence[Mapping[str, Any]], *, prefix: str
+        ) -> dict[str, float | None]:
+            by_unit: dict[str, list[float]] = defaultdict(list)
+            for condition_row in condition_rows:
+                value = _finite_float(condition_row.get("effective_dose"))
+                if value is not None:
+                    by_unit[_aggregation_unit_id(condition_row)].append(value)
+            values = [_mean(by_unit[unit]) for unit in sorted(by_unit)]
+            return {
+                f"{prefix}_effective_dose_mean": _mean(values) if values else None,
+                f"{prefix}_effective_dose_min": min(values) if values else None,
+                f"{prefix}_effective_dose_max": max(values) if values else None,
+            }
+
+        output = dict(zip(CONFIRMATORY_GROUP_FIELDS, key))
         output.update(
             {
+                "effective_dose": None,
                 "comparison_type": "confirmatory",
                 "contrast": contrast,
                 "condition": left_condition,
@@ -2874,6 +2898,8 @@ def _confirmatory_contrast_rows(
                 ),
                 "confidence_level": confidence_level,
                 "bootstrap_replicates": bootstrap_replicates,
+                **effective_dose_fields(matched_left_rows, prefix="condition"),
+                **effective_dose_fields(matched_right_rows, prefix="reference"),
                 **stats,
                 **clevrer_exact_set_stats,
             }
@@ -2881,7 +2907,10 @@ def _confirmatory_contrast_rows(
         outputs.append(output)
         estimands.append(
             {
-                **{field: output.get(field) for field in GROUP_FIELDS},
+                **{
+                    field: output.get(field)
+                    for field in (*CONFIRMATORY_GROUP_FIELDS, "effective_dose")
+                },
                 "expected_left_rows": output.get("expected_left_rows"),
                 "expected_aligned_rows": output.get("expected_aligned_rows"),
                 "expected_unmatched_left_rows": output.get(
@@ -2907,7 +2936,11 @@ def _confirmatory_contrast_rows(
     return outputs, {
         "left_condition": left_condition,
         "right_condition": right_condition,
-        "dose_rule": "match requested_dose when right has multiple requested doses; otherwise broadcast",
+        "dose_rule": (
+            "match requested_dose when right has multiple requested doses; otherwise "
+            "broadcast; pool effective_dose within requested_dose and report it "
+            "diagnostically"
+        ),
         "unmatched_left_rows": unmatched,
         "expected_unmatched_left_rows": expected_unmatched,
         "expected_left_rows": expected_left_rows_total,
