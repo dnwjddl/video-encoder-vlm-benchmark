@@ -23,7 +23,11 @@ PALETTE = {
     "text_only": "#4C78A8",
     "single": "#F58518",
     "reverse_shuffle": "#E45756",
+    "reverse": "#E45756",
+    "shuffle": "#B279A2",
+    "original": "#72B7B2",
     "hard": "#54A24B",
+    "hard_incorrect": "#111111",
     "all_accuracy": "#72B7B2",
     "hard_accuracy": "#B279A2",
     "shared_hard_accuracy": "#9D755D",
@@ -161,6 +165,9 @@ def build_rows(
     for group, items in sorted(groups.items()):
         n = len(items)
         text_n = sum(row["text_only_correct"] for row in items)
+        single_correct_n = sum(row["single_correct"] for row in items)
+        reverse_correct_n = sum(row["reverse_correct"] for row in items)
+        shuffle_correct_n = sum(row["shuffle_correct"] for row in items)
         single_n = sum((not row["text_only_correct"]) and row["single_correct"] for row in items)
         reverse_shuffle_n = sum(
             (not row["text_only_correct"]) and (not row["single_correct"]) and (row["reverse_correct"] or row["shuffle_correct"])
@@ -169,17 +176,22 @@ def build_rows(
         hard_n = sum(row["hard_after_filters"] for row in items)
         original_correct_n = sum(row["original_correct"] for row in items)
         hard_correct_n = sum(row["hard_after_filters"] and row["original_correct"] for row in items)
+        hard_incorrect_n = hard_n - hard_correct_n
         summary.append(
             {
                 "encoder": encoder,
                 "group": group,
                 "num_examples": n,
                 "text_only_correct": text_n,
+                "single_frame_correct_all": single_correct_n,
+                "reverse_correct_all": reverse_correct_n,
+                "shuffle_correct_all": shuffle_correct_n,
                 "single_frame_shortcut": single_n,
                 "reverse_or_shuffle_shortcut": reverse_shuffle_n,
                 "hard_after_filters": hard_n,
                 "original_correct": original_correct_n,
                 "hard_original_correct": hard_correct_n,
+                "hard_original_incorrect": hard_incorrect_n,
                 "text_only_rate": text_n / max(n, 1),
                 "single_frame_shortcut_rate": single_n / max(n, 1),
                 "reverse_or_shuffle_shortcut_rate": reverse_shuffle_n / max(n, 1),
@@ -225,7 +237,8 @@ def plot_overview(summary_df: pd.DataFrame, out_prefix: Path) -> None:
         ("text_only_correct", "text-only correct", PALETTE["text_only"]),
         ("single_frame_shortcut", "single-frame shortcut", PALETTE["single"]),
         ("reverse_or_shuffle_shortcut", "reverse/shuffle shortcut", PALETTE["reverse_shuffle"]),
-        ("hard_after_filters", "hard after filters", PALETTE["hard"]),
+        ("hard_original_correct", "hard: original correct", PALETTE["hard"]),
+        ("hard_original_incorrect", "hard: original incorrect", PALETTE["hard_incorrect"]),
     ]
     for col, label, color in stack_cols:
         values = pd.to_numeric(all_df[col], errors="coerce").fillna(0).to_numpy(dtype=float)
@@ -317,7 +330,8 @@ def plot_filter_distribution(all_df: pd.DataFrame, out_prefix: Path) -> None:
         ("text_only_correct", "text-only correct", PALETTE["text_only"]),
         ("single_frame_shortcut", "single-frame shortcut", PALETTE["single"]),
         ("reverse_or_shuffle_shortcut", "reverse/shuffle shortcut", PALETTE["reverse_shuffle"]),
-        ("hard_after_filters", "hard after filters", PALETTE["hard"]),
+        ("hard_original_correct", "hard: original correct", PALETTE["hard"]),
+        ("hard_original_incorrect", "hard: original incorrect", PALETTE["hard_incorrect"]),
     ]
     totals = pd.to_numeric(all_df["num_examples"], errors="coerce").fillna(0).to_numpy(dtype=float)
     for col, label, color in stack_cols:
@@ -349,7 +363,57 @@ def plot_filter_distribution(all_df: pd.DataFrame, out_prefix: Path) -> None:
     max_total = float(np.nanmax(totals)) if len(totals) else 0.0
     if max_total > 0:
         ax.set_xlim(0, max_total * 1.08)
-    ax.legend(frameon=False, fontsize=9, loc="lower center", bbox_to_anchor=(0.5, -0.2), ncol=2)
+    ax.legend(frameon=False, fontsize=9, loc="lower center", bbox_to_anchor=(0.5, -0.22), ncol=3)
+    save_figure(fig, out_prefix)
+
+
+def plot_independent_correct_counts(all_df: pd.DataFrame, out_prefix: Path) -> None:
+    encoders = all_df["encoder"].astype(str).tolist()
+    y = np.arange(len(encoders))
+    fig, ax = plt.subplots(figsize=(13, max(6.5, len(encoders) * 0.85)), constrained_layout=True)
+    count_cols = [
+        ("text_only_correct", "text-only", PALETTE["text_only"]),
+        ("single_frame_correct_all", "single frame", PALETTE["single"]),
+        ("reverse_correct_all", "reverse", PALETTE["reverse"]),
+        ("shuffle_correct_all", "shuffle", PALETTE["shuffle"]),
+        ("original_correct", "original video", PALETTE["original"]),
+    ]
+    totals = pd.to_numeric(all_df["num_examples"], errors="coerce").fillna(0).to_numpy(dtype=float)
+    height = 0.14
+    for idx, (col, label, color) in enumerate(count_cols):
+        values = pd.to_numeric(all_df[col], errors="coerce").fillna(0).to_numpy(dtype=float)
+        positions = y + (idx - (len(count_cols) - 1) / 2) * height
+        ax.barh(positions, values, height=height, label=label, color=color, linewidth=0)
+        for y_pos, value, total in zip(positions, values, totals):
+            if total <= 0:
+                continue
+            label_text = f"{int(value):,} ({value / total * 100:.1f}%)"
+            inside = value >= total * 0.14
+            x_pos = value - total * 0.012 if inside else value + total * 0.012
+            ax.text(
+                x_pos,
+                y_pos,
+                label_text,
+                va="center",
+                ha="right" if inside else "left",
+                fontsize=7,
+                color="white" if inside else "black",
+                clip_on=False,
+            )
+
+    max_total = float(np.nanmax(totals)) if len(totals) else 0.0
+    if max_total > 0:
+        ax.axvline(max_total, color="#777777", linestyle="--", linewidth=1, alpha=0.7)
+        ax.set_xlim(0, max_total * 1.12)
+        if np.allclose(totals, max_total):
+            ax.text(max_total, -0.7, f"total = {int(max_total):,}", ha="right", va="bottom", fontsize=8, color="#555555")
+    ax.set_title("MVBench Independent Correct Counts", loc="left", fontweight="bold")
+    ax.set_xlabel("correct questions (each mode evaluated independently on the full set)")
+    ax.set_yticks(y)
+    ax.set_yticklabels(encoders)
+    ax.invert_yaxis()
+    ax.grid(axis="x", alpha=0.25)
+    ax.legend(frameon=False, fontsize=9, loc="lower center", bbox_to_anchor=(0.5, -0.16), ncol=5)
     save_figure(fig, out_prefix)
 
 
@@ -445,6 +509,7 @@ def plot_separate_overview_panels(summary_df: pd.DataFrame, out_dir: Path) -> No
     if all_df.empty:
         return
     plot_filter_distribution(all_df, out_dir / "mvbench_filter_distribution")
+    plot_independent_correct_counts(all_df, out_dir / "mvbench_independent_correct_counts")
     plot_filter_rates(all_df, out_dir / "mvbench_filter_rates")
     plot_accuracy_after_filtering(all_df, out_dir / "mvbench_accuracy_after_filtering")
     plot_remaining_question_counts(all_df, out_dir / "mvbench_remaining_question_counts")

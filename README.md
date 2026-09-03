@@ -660,6 +660,7 @@ outputs/mvbench/analysis/per_item_filters.csv
 outputs/mvbench/analysis/shared_hard_ids.jsonl
 outputs/mvbench/analysis/mvbench_filter_overview.png
 outputs/mvbench/analysis/mvbench_filter_distribution.png
+outputs/mvbench/analysis/mvbench_independent_correct_counts.png
 outputs/mvbench/analysis/mvbench_filter_rates.png
 outputs/mvbench/analysis/mvbench_accuracy_after_filtering.png
 outputs/mvbench/analysis/mvbench_remaining_question_counts.png
@@ -669,6 +670,11 @@ outputs/mvbench/analysis/mvbench_task_hardness_heatmap.png
 `filter_summary.csv` contains the main numbers: text-only count, single-frame
 shortcut count, reverse/shuffle shortcut count, remaining hard-question count,
 all-question accuracy, per-encoder hard accuracy, and shared-hard accuracy.
+In `mvbench_filter_distribution.png`, the remaining hard set is split into
+original-video correct (green) and original-video incorrect (black). The black
+segment is stacked last. `mvbench_independent_correct_counts.png` shows the
+text-only, single-frame, reverse, shuffle, and original-video correct counts as
+overlapping, independent measurements against the full evaluated set.
 `mvbench_remaining_question_counts.png` shows how many hard questions are left
 after shortcut filtering for each encoder and for the shared-hard subset.
 
